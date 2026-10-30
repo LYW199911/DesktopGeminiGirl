@@ -42,7 +42,7 @@ class SpeechBubble(QWidget):
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(2, 0, 0, 0)
 
-        self.title_label = QLabel("🐾 哈Gemi", self.card)
+        self.title_label = QLabel("哈Gemi", self.card)
         self.title_label.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
         self.title_label.setStyleSheet("color: #ff4e88; background: transparent; border: none;")
         top_bar.addWidget(self.title_label)

@@ -44,33 +44,33 @@ class DesktopPetTray(QSystemTrayIcon):
             }
         """)
 
-        act_settings = QAction("⚙️ 控制台与设置中心", self)
+        act_settings = QAction("控制台与设置中心", self)
         act_settings.triggered.connect(self.open_settings.emit)
         menu.addAction(act_settings)
 
         menu.addSeparator()
 
-        act_critique = QAction("⚡ 呼叫哈Gemi锐评 (Ctrl+F9)", self)
+        act_critique = QAction("呼叫哈Gemi锐评 (Ctrl+F9)", self)
         act_critique.triggered.connect(self.trigger_critique.emit)
         menu.addAction(act_critique)
 
-        act_cycle = QAction("🔄 切换下一个立绘 (Ctrl+F11)", self)
+        act_cycle = QAction("切换下一个立绘 (Ctrl+F11)", self)
         act_cycle.triggered.connect(self.cycle_outfit.emit)
         menu.addAction(act_cycle)
 
         menu.addSeparator()
 
-        self.act_vis = QAction("👁️ 显示/隐藏桌面萌娘", self)
+        self.act_vis = QAction("显示/隐藏桌宠", self)
         self.act_vis.triggered.connect(self.toggle_pet_visibility.emit)
         menu.addAction(self.act_vis)
 
-        self.act_tts = QAction("🔊 开启/关闭语音 (Ctrl+F10)", self)
+        self.act_tts = QAction("开启/关闭语音 (Ctrl+F10)", self)
         self.act_tts.triggered.connect(self.toggle_tts.emit)
         menu.addAction(self.act_tts)
 
         menu.addSeparator()
 
-        act_quit = QAction("❌ 退出程序", self)
+        act_quit = QAction("退出程序", self)
         act_quit.triggered.connect(self.quit_requested.emit)
         menu.addAction(act_quit)
 

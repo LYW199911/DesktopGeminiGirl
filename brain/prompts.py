@@ -45,7 +45,7 @@ def get_system_prompt(
 
 def build_scene_prompt(scene: str, window_title: str, process_name: str, pet_name: str = "哈Gemi") -> str:
     if scene == "video":
-        return f"""【场景：看视频 / 直播互动 🎬】
+        return f"""【场景：看视频 / 直播互动】
 视频应用进程：{process_name}
 视频/直播标题：{window_title}
 任务：
@@ -57,18 +57,18 @@ def build_scene_prompt(scene: str, window_title: str, process_name: str, pet_nam
 必须带情绪标签（[shocked]/[curious]/[relieved]/[confident]），字数20-45字："""
 
     elif scene == "game":
-        return f"""【场景：打游戏 🎮】
+        return f"""【场景：打游戏】
 游戏进程：{process_name}
 窗口标题：{window_title}
 结合附件中的游戏画面（血条、局势、操作），以{pet_name}元气毒舌口吻一针见血调侃主人的操作或战况，并给出情绪标签（[shocked]/[curious]/[relieved]/[confident]）！字数20-45字："""
 
     elif scene == "work":
-        return f"""【场景：写代码/工作 💻】
+        return f"""【场景：写代码/工作】
 工作软件：{process_name}
 窗口标题：{window_title}
 结合屏幕画面，以{pet_name}元气毒舌口吻调侃主人状态（摸鱼抓现行/报错发呆），并给出情绪标签（[shocked]/[curious]/[relieved]/[confident]）！字数20-40字："""
 
     else:
-        return f"""【场景：日常桌面冲浪/摸鱼 🌐】
+        return f"""【场景：日常桌面冲浪/摸鱼】
 活动窗口：{window_title} ({process_name})
 结合屏幕画面，以{pet_name}的视角发表一句犀利好玩的锐评吐槽，并给出情绪标签（[shocked]/[curious]/[relieved]/[confident]）！字数20-40字："""

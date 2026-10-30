@@ -14,10 +14,10 @@ EMOTION_MAP = {
 }
 
 OUTFIT_LABELS = {
-    "confident": "⭐ 自信傲娇立绘",
-    "curious": "🐾 呆萌疑惑Q版",
-    "shocked": "😱 抱头震惊表情",
-    "relieved": "💦 害羞无语擦汗"
+    "confident": "自信傲娇立绘",
+    "curious": "呆萌疑惑Q版",
+    "shocked": "抱头震惊表情",
+    "relieved": "害羞无语擦汗"
 }
 
 class DesktopPetWidget(QWidget):
@@ -87,7 +87,7 @@ class DesktopPetWidget(QWidget):
             self.avatar_label.move(0, 5)
         else:
             pet_name = self.config_mgr.get("pet_name", "哈Gemi")
-            self.avatar_label.setText(f"🐾 {pet_name}")
+            self.avatar_label.setText(pet_name)
             self.avatar_label.resize(160, 220)
             self.resize(160, 220)
 
@@ -218,25 +218,25 @@ class DesktopPetWidget(QWidget):
             }
         """)
 
-        act_settings = QAction("⚙️ 控制台与设置中心", self)
+        act_settings = QAction("控制台与设置中心", self)
         act_settings.triggered.connect(self.open_settings.emit)
         menu.addAction(act_settings)
 
         menu.addSeparator()
 
         pet_name = self.config_mgr.get("pet_name", "哈Gemi")
-        act_critique = QAction(f"⚡ 让{pet_name}锐评 (Ctrl+F9)", self)
+        act_critique = QAction(f"呼叫{pet_name}锐评 (Ctrl+F9)", self)
         act_critique.triggered.connect(self.request_critique.emit)
         menu.addAction(act_critique)
 
-        act_switch = QAction("🔄 切换下一个立绘 (滚轮/中键/Ctrl+F11)", self)
+        act_switch = QAction("切换下一个立绘 (滚轮/中键/Ctrl+F11)", self)
         act_switch.triggered.connect(self.cycle_next_outfit)
         menu.addAction(act_switch)
 
         menu.addSeparator()
 
         # Outfit submenu
-        outfit_menu = menu.addMenu("👗 切换造型/差分")
+        outfit_menu = menu.addMenu("切换造型/差分")
         outfit_menu.setStyleSheet(menu.styleSheet())
 
         cfg_outfits = self.config_mgr.get("outfits", {})
@@ -250,17 +250,17 @@ class DesktopPetWidget(QWidget):
 
         menu.addSeparator()
 
-        act_tts = QAction("🔊 切换语音吐槽 (Ctrl+F10)", self)
+        act_tts = QAction("切换语音吐槽 (Ctrl+F10)", self)
         act_tts.triggered.connect(self.toggle_tts.emit)
         menu.addAction(act_tts)
 
-        act_auto = QAction("👁️ 自动感知开关", self)
+        act_auto = QAction("自动感知开关", self)
         act_auto.triggered.connect(self.toggle_auto.emit)
         menu.addAction(act_auto)
 
         menu.addSeparator()
 
-        act_quit = QAction("🐾 休息并退出", self)
+        act_quit = QAction("退出程序", self)
         act_quit.triggered.connect(self.quit_app.emit)
         menu.addAction(act_quit)
 

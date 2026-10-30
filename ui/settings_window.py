@@ -40,10 +40,10 @@ PERSONA_PRESETS = {
 }
 
 TTS_VOICES = [
-    ("zh-CN-XiaoyiNeural", "👧 晓伊 (活泼少女 / 推荐)"),
-    ("zh-CN-XiaoxiaoNeural", "🌸 晓晓 (知性清澈)"),
-    ("zh-CN-YunjianNeural", "👦 云健 (元气少年)"),
-    ("zh-CN-YunxiNeural", "✨ 云希 (沉稳少年)")
+    ("zh-CN-XiaoyiNeural", "晓伊 (活泼少女 / 推荐)"),
+    ("zh-CN-XiaoxiaoNeural", "晓晓 (知性清澈)"),
+    ("zh-CN-YunjianNeural", "云健 (元气少年)"),
+    ("zh-CN-YunxiNeural", "云希 (沉稳少年)")
 ]
 
 class SettingsWindow(QMainWindow):
@@ -55,7 +55,7 @@ class SettingsWindow(QMainWindow):
         self.config_mgr = ConfigManager()
         self.logger = LogManager()
 
-        self.setWindowTitle("🐾 哈Gemi · 控制台与设置中心")
+        self.setWindowTitle("哈Gemi · 控制台与设置中心")
         self.setMinimumSize(820, 640)
         self.resize(860, 680)
 
@@ -195,10 +195,10 @@ class SettingsWindow(QMainWindow):
         self.tab_persona = QWidget()
         self.tab_logs = QWidget()
 
-        self.tabs.addTab(self.tab_general, "⚙️ 核心与感知")
-        self.tabs.addTab(self.tab_avatar, "👗 立绘与表情工坊")
-        self.tabs.addTab(self.tab_persona, "🎭 人设与口癖调教")
-        self.tabs.addTab(self.tab_logs, "📜 实时日志与记录")
+        self.tabs.addTab(self.tab_general, "核心与感知")
+        self.tabs.addTab(self.tab_avatar, "立绘与表情工坊")
+        self.tabs.addTab(self.tab_persona, "人设与口癖调教")
+        self.tabs.addTab(self.tab_logs, "实时日志与记录")
 
         self._build_general_tab()
         self._build_avatar_tab()
@@ -209,18 +209,18 @@ class SettingsWindow(QMainWindow):
         bottom_bar = QHBoxLayout()
         bottom_bar.setContentsMargins(4, 4, 4, 0)
 
-        self.btn_manual_test = QPushButton("⚡ 立即让哈Gemi锐评测试", self)
+        self.btn_manual_test = QPushButton("立即让哈Gemi锐评测试", self)
         self.btn_manual_test.setObjectName("SecondaryBtn")
         self.btn_manual_test.clicked.connect(self.request_manual_critique.emit)
         bottom_bar.addWidget(self.btn_manual_test)
 
         bottom_bar.addStretch()
 
-        self.btn_save = QPushButton("💾 保存并立即生效", self)
+        self.btn_save = QPushButton("保存并立即生效", self)
         self.btn_save.clicked.connect(self.save_and_apply)
         bottom_bar.addWidget(self.btn_save)
 
-        self.btn_hide = QPushButton("🐾 最小化到托盘", self)
+        self.btn_hide = QPushButton("最小化到托盘", self)
         self.btn_hide.setObjectName("SecondaryBtn")
         self.btn_hide.clicked.connect(self.hide)
         bottom_bar.addWidget(self.btn_hide)
@@ -239,7 +239,7 @@ class SettingsWindow(QMainWindow):
         layout.setSpacing(14)
 
         # 1. API Box
-        box_api = QGroupBox("🔑 AI 算力与大模型接口设置")
+        box_api = QGroupBox("AI 算力与大模型接口设置")
         box_api_l = QGridLayout(box_api)
         box_api_l.setSpacing(10)
 
@@ -266,13 +266,13 @@ class SettingsWindow(QMainWindow):
         self.input_key.setPlaceholderText("填入 API 密钥")
         box_api_l.addWidget(self.input_key, 2, 1)
 
-        self.btn_show_key = QPushButton("👁️ 显示")
+        self.btn_show_key = QPushButton("显示")
         self.btn_show_key.setObjectName("SecondaryBtn")
         self.btn_show_key.setFixedWidth(75)
         self.btn_show_key.clicked.connect(self._toggle_key_visibility)
         box_api_l.addWidget(self.btn_show_key, 2, 2)
 
-        self.btn_test_key = QPushButton("⚡ 测试连接")
+        self.btn_test_key = QPushButton("测试连接")
         self.btn_test_key.setObjectName("SecondaryBtn")
         self.btn_test_key.setFixedWidth(90)
         self.btn_test_key.clicked.connect(self._test_api_connection)
@@ -287,7 +287,7 @@ class SettingsWindow(QMainWindow):
         layout.addWidget(box_api)
 
         # 2. Perception & Autostart Box
-        box_sense = QGroupBox("👁️ 自动感知与场景设置")
+        box_sense = QGroupBox("自动感知与场景设置")
         box_sense_l = QGridLayout(box_sense)
 
         self.chk_auto = QCheckBox("启用全自动感知模式（定时巡逻屏幕与活跃窗口）")
@@ -305,22 +305,22 @@ class SettingsWindow(QMainWindow):
 
         # Scene preference checkboxes
         scene_h = QHBoxLayout()
-        self.chk_game = QCheckBox("🎮 打游戏战况锐评")
-        self.chk_video = QCheckBox("🎬 看视频/直播弹幕互动")
-        self.chk_work = QCheckBox("💻 码字/写代码摸鱼抓包")
+        self.chk_game = QCheckBox("打游戏战况锐评")
+        self.chk_video = QCheckBox("看视频/直播弹幕互动")
+        self.chk_work = QCheckBox("码字/写代码摸鱼抓包")
         scene_h.addWidget(self.chk_game)
         scene_h.addWidget(self.chk_video)
         scene_h.addWidget(self.chk_work)
         box_sense_l.addLayout(scene_h, 2, 0, 1, 2)
 
         # Autostart checkbox
-        self.chk_autostart = QCheckBox("🚀 开机自动在后台启动哈Gemi (Windows 自启动)")
+        self.chk_autostart = QCheckBox("开机自动在后台启动哈Gemi (Windows 自启动)")
         box_sense_l.addWidget(self.chk_autostart, 3, 0, 1, 2)
 
         layout.addWidget(box_sense)
 
         # 3. Voice & Appearance Box
-        box_voice = QGroupBox("🔊 语音播报 (TTS) 与桌宠外观")
+        box_voice = QGroupBox("语音播报 (TTS) 与桌宠外观")
         box_voice_l = QGridLayout(box_voice)
 
         self.chk_tts = QCheckBox("启用少女音语音吐槽播报")
@@ -332,7 +332,7 @@ class SettingsWindow(QMainWindow):
             self.combo_voice.addItem(label, v_id)
         box_voice_l.addWidget(self.combo_voice, 1, 1)
 
-        self.btn_test_tts = QPushButton("🔊 试听发音")
+        self.btn_test_tts = QPushButton("试听发音")
         self.btn_test_tts.setObjectName("SecondaryBtn")
         self.btn_test_tts.clicked.connect(self._test_voice)
         box_voice_l.addWidget(self.btn_test_tts, 1, 2)
@@ -364,17 +364,17 @@ class SettingsWindow(QMainWindow):
         layout = QVBoxLayout(content)
         layout.setSpacing(16)
 
-        desc = QLabel("💡 在这里可以为哈Gemi的 4 套情绪表情上传自定义立绘。支持 PNG、JPG、WebP，可一键自动去除白色背景！")
+        desc = QLabel("在这里可以为哈Gemi的 4 套情绪表情上传自定义立绘。支持 PNG、JPG、WebP，可一键自动去除白色背景！")
         desc.setStyleSheet("color: #ff99bb; font-size: 12px;")
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
         self.outfit_cards = {}
         emotions = [
-            ("confident", "⭐ 自信傲娇 (默认站姿)", "avatar_standing.png", "日常元气站姿、傲娇嘴硬或调侃"),
-            ("curious", "🐾 呆萌疑惑 (Q版抓头)", "avatar_bust.png", "盯——、摸鱼抓现行、感到疑惑"),
-            ("shocked", "😱 抱头震惊 (抓狂冒汗)", "avatar_shocked.png", "游戏离谱暴毙、下饭反转、弹幕刷问号"),
-            ("relieved", "💦 害羞擦汗 (无语扶额)", "avatar_relieved.png", "代码满屏报错、长吁短叹、感到无语")
+            ("confident", "自信傲娇 (默认站姿)", "avatar_standing.png", "日常元气站姿、傲娇嘴硬或调侃"),
+            ("curious", "呆萌疑惑 (Q版抓头)", "avatar_bust.png", "盯——、摸鱼抓现行、感到疑惑"),
+            ("shocked", "抱头震惊 (抓狂冒汗)", "avatar_shocked.png", "游戏离谱暴毙、下饭反转、弹幕刷问号"),
+            ("relieved", "害羞擦汗 (无语扶额)", "avatar_relieved.png", "代码满屏报错、长吁短叹、感到无语")
         ]
 
         grid = QGridLayout()
@@ -410,12 +410,12 @@ class SettingsWindow(QMainWindow):
 
             # Buttons
             btn_h = QHBoxLayout()
-            btn_upload = QPushButton("📁 更换图片")
+            btn_upload = QPushButton("更换图片")
             btn_upload.setObjectName("SecondaryBtn")
             btn_upload.clicked.connect(lambda checked=False, k=emo_key: self._upload_avatar(k))
             btn_h.addWidget(btn_upload)
 
-            btn_reset = QPushButton("🔄 默认")
+            btn_reset = QPushButton("恢复默认")
             btn_reset.setObjectName("SecondaryBtn")
             btn_reset.clicked.connect(lambda checked=False, k=emo_key, df=default_fn: self._reset_avatar(k, df))
             btn_h.addWidget(btn_reset)
@@ -447,7 +447,7 @@ class SettingsWindow(QMainWindow):
         layout = QVBoxLayout(content)
         layout.setSpacing(14)
 
-        box_p = QGroupBox("🐾 角色基本设定与口癖")
+        box_p = QGroupBox("角色基本设定与口癖")
         box_p_l = QGridLayout(box_p)
 
         box_p_l.addWidget(QLabel("桌宠名字:"), 0, 0)
@@ -472,7 +472,7 @@ class SettingsWindow(QMainWindow):
 
         layout.addWidget(box_p)
 
-        box_custom = QGroupBox("🧠 高级自定义 System Prompt (留空则使用内置精调设定)")
+        box_custom = QGroupBox("高级自定义 System Prompt (留空则使用内置精调设定)")
         box_c_l = QVBoxLayout(box_custom)
 
         self.txt_custom_prompt = QTextEdit()
@@ -480,7 +480,7 @@ class SettingsWindow(QMainWindow):
         box_c_l.addWidget(self.txt_custom_prompt)
 
         btn_h = QHBoxLayout()
-        btn_reset_prompt = QPushButton("🔄 一键恢复官方推荐 Prompt")
+        btn_reset_prompt = QPushButton("一键恢复官方推荐 Prompt")
         btn_reset_prompt.setObjectName("SecondaryBtn")
         btn_reset_prompt.clicked.connect(lambda: self.txt_custom_prompt.clear())
         btn_h.addWidget(btn_reset_prompt)
@@ -507,7 +507,7 @@ class SettingsWindow(QMainWindow):
         tb.addWidget(lbl)
         tb.addStretch()
 
-        btn_clear = QPushButton("🧹 清空日志")
+        btn_clear = QPushButton("清空日志")
         btn_clear.setObjectName("SecondaryBtn")
         btn_clear.clicked.connect(self._clear_logs)
         tb.addWidget(btn_clear)
@@ -677,10 +677,10 @@ class SettingsWindow(QMainWindow):
     def _toggle_key_visibility(self):
         if self.input_key.echoMode() == QLineEdit.EchoMode.Password:
             self.input_key.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.btn_show_key.setText("🔒 隐藏")
+            self.btn_show_key.setText("隐藏")
         else:
             self.input_key.setEchoMode(QLineEdit.EchoMode.Password)
-            self.btn_show_key.setText("👁️ 显示")
+            self.btn_show_key.setText("显示")
 
     def _test_api_connection(self):
         prov = self.combo_provider.currentData()
@@ -696,9 +696,9 @@ class SettingsWindow(QMainWindow):
         engine = GeminiCritiqueEngine()
         ok, msg = engine.test_connection(key=key, model=model, provider=prov, custom_url=custom_url)
         if ok:
-            QMessageBox.information(self, "连接成功", f"🎉 {msg}")
+            QMessageBox.information(self, "连接成功", msg)
         else:
-            QMessageBox.critical(self, "连接失败", f"❌ {msg}")
+            QMessageBox.critical(self, "连接失败", msg)
 
     def _test_voice(self):
         voice = self.combo_voice.currentData()
@@ -777,4 +777,4 @@ class SettingsWindow(QMainWindow):
         self.settings_applied.emit()
         self.logger.info("用户保存并应用了新的控制台设置！")
 
-        QMessageBox.information(self, "已保存", "✨ 设置已成功保存并立即同步至桌面桌宠！")
+        QMessageBox.information(self, "已保存", "设置已成功保存并立即同步至桌面桌宠！")

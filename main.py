@@ -91,8 +91,8 @@ class DesktopPetController(QObject):
 
         # Startup Log & Greet
         pet_name = self.config_mgr.get("pet_name", "哈Gemi")
-        self.logger.info(f"✨ {pet_name} 启动就位！双击托盘图标或右键桌宠可打开设置中心。")
-        QTimer.singleShot(1000, lambda: self.critique_ready.emit(f"✨ {pet_name}已就位！随时按 Ctrl+F9 接受本喵的锐评吧！"))
+        self.logger.info(f"{pet_name} 启动就位！双击托盘图标或右键桌宠可打开设置中心。")
+        QTimer.singleShot(1000, lambda: self.critique_ready.emit(f"{pet_name}已就位！随时按 Ctrl+F9 接受本喵的锐评吧！"))
 
     def show_settings(self):
         self.settings_win.show()
@@ -116,7 +116,7 @@ class DesktopPetController(QObject):
         self.pet.update_size(new_height)
 
         pet_name = cfg.get("pet_name", "哈Gemi")
-        self.pet.bubble.title_label.setText(f"🐾 {pet_name}")
+        self.pet.bubble.title_label.setText(pet_name)
         self.tray.setToolTip(f"Gemini 赛博猫娘 · {pet_name}\n双击打开控制台与设置中心")
 
         self.logger.info(f"设置已重新加载，当前桌宠: {pet_name}，冷却: {self.rate_limiter.cooldown_seconds}s")
@@ -206,13 +206,13 @@ class DesktopPetController(QObject):
 
     def toggle_tts(self):
         status = self.speaker.toggle()
-        msg = "🔊 语音播报已开启喵~" if status else "🔇 语音播报已静音喵！"
+        msg = "语音播报已开启喵~" if status else "语音播报已静音喵！"
         self.critique_ready.emit(msg)
         self.logger.info(msg)
 
     def toggle_auto(self):
         self.auto_mode = not self.auto_mode
-        msg = "👁️ 自动感知已开启喵！" if self.auto_mode else "😴 自动感知已休眠（按 Ctrl+F9 手动唤醒）！"
+        msg = "自动感知已开启喵！" if self.auto_mode else "自动感知已休眠（按 Ctrl+F9 手动唤醒）！"
         self.critique_ready.emit(msg)
         self.logger.info(msg)
 
