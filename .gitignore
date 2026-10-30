@@ -1,0 +1,33 @@
+# Local Configuration (contains user API Keys - DO NOT COMMIT!)
+config.json
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller build artifacts & temp directories
+build/
+dist/
+*.spec.bak
+
+# Audio cache & temp files
+speech_*.mp3
+*.log
+temp_*
+*.tmp
+
+# Test scripts & temp renders
+text_crop.png
+test_bubble_*.png
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# System Files
+.DS_Store
+Thumbs.db
+desktop.ini

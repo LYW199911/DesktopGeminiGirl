@@ -1,0 +1,780 @@
+import os
+import shutil
+import time
+from typing import Callable, Optional
+from PyQt6.QtWidgets import (
+    QWidget, QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QLineEdit, QPushButton, QSlider, QSpinBox, QCheckBox, QComboBox,
+    QTextEdit, QTextBrowser, QFileDialog, QMessageBox, QGroupBox, QScrollArea,
+    QFrame
+)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QIcon, QPixmap
+
+from config_manager import ConfigManager
+from log_manager import LogManager
+from app_paths import ASSETS_DIR
+from .img_utils import remove_white_background
+
+PERSONA_PRESETS = {
+    "元气毒舌 (默认)": {
+        "style": "元气毒舌",
+        "catchphrases": "喵~, 喵？！, 哼~, 盯——",
+        "desc": "活泼元气，笑容灿烂，嘴硬毒舌，一针见血嘲讽主人的菜操作与摸鱼行为。"
+    },
+    "傲娇大小姐": {
+        "style": "傲娇大小姐",
+        "catchphrases": "哼~, 笨蛋！, 才没有在关心你呢, 盯——",
+        "desc": "高高在上又极度傲娇，明明很在乎主人却绝不承认，说话充满娇蛮大小姐范。"
+    },
+    "软萌治愈猫娘": {
+        "style": "软萌治愈",
+        "catchphrases": "喵呜~, 主人最棒啦, 蹭蹭~, 喵~",
+        "desc": "极度温柔软萌，遇到主人打游戏逆风或写代码报错会送上摸头安慰与元气加油。"
+    },
+    "高冷毒舌监工": {
+        "style": "高冷监工",
+        "catchphrases": "呵。, 愚蠢。, 还不去干活？, 盯——",
+        "desc": "冷峻严格的桌面监工，对任何怠惰和低级失误施以冷酷无情的犀利吐槽。"
+    }
+}
+
+TTS_VOICES = [
+    ("zh-CN-XiaoyiNeural", "👧 晓伊 (活泼少女 / 推荐)"),
+    ("zh-CN-XiaoxiaoNeural", "🌸 晓晓 (知性清澈)"),
+    ("zh-CN-YunjianNeural", "👦 云健 (元气少年)"),
+    ("zh-CN-YunxiNeural", "✨ 云希 (沉稳少年)")
+]
+
+class SettingsWindow(QMainWindow):
+    settings_applied = pyqtSignal()
+    request_manual_critique = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.config_mgr = ConfigManager()
+        self.logger = LogManager()
+
+        self.setWindowTitle("🐾 哈Gemi · 控制台与设置中心")
+        self.setMinimumSize(820, 640)
+        self.resize(860, 680)
+
+        icon_path = os.path.join(ASSETS_DIR, "app_icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
+        self._init_ui()
+        self._load_values()
+
+        # Connect log stream
+        self.logger.log_added.connect(self._append_log)
+
+    def _init_ui(self):
+        # Central widget with styling
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(12)
+
+        # Style sheet (Anime Dark Studio Style)
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #1a162b;
+                color: #e4e0f0;
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+            }
+            QTabWidget::pane {
+                border: 1.5px solid #362d52;
+                border-radius: 10px;
+                background-color: #211c38;
+                padding: 10px;
+            }
+            QTabBar::tab {
+                background-color: #26203f;
+                color: #a49cb8;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 8px 18px;
+                margin-right: 4px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QTabBar::tab:selected {
+                background-color: #ff4e88;
+                color: #ffffff;
+            }
+            QGroupBox {
+                border: 1px solid #3d335c;
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 14px;
+                font-weight: bold;
+                color: #ff7aa6;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 4px;
+            }
+            QLineEdit, QComboBox, QTextEdit, QSpinBox {
+                background-color: #171326;
+                border: 1px solid #3d335c;
+                border-radius: 6px;
+                padding: 6px 10px;
+                color: #ffffff;
+            }
+            QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
+                border: 1.5px solid #ff4e88;
+            }
+            QPushButton {
+                background-color: #ff4e88;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #ff689a;
+            }
+            QPushButton:pressed {
+                background-color: #e03b73;
+            }
+            QPushButton#SecondaryBtn {
+                background-color: #2f2747;
+                border: 1px solid #4a3e6b;
+                color: #c9c3dd;
+            }
+            QPushButton#SecondaryBtn:hover {
+                background-color: #3f345e;
+                color: #ffffff;
+            }
+            QCheckBox {
+                color: #e4e0f0;
+                spacing: 8px;
+                font-size: 13px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid #4a3e6b;
+                background-color: #171326;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff4e88;
+                border-color: #ff4e88;
+            }
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #2a2245;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #ff4e88;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #ffffff;
+                border: 2px solid #ff4e88;
+                width: 16px;
+                margin-top: -5px;
+                margin-bottom: -5px;
+                border-radius: 8px;
+            }
+        """)
+
+        # Tabs
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+
+        self.tab_general = QWidget()
+        self.tab_avatar = QWidget()
+        self.tab_persona = QWidget()
+        self.tab_logs = QWidget()
+
+        self.tabs.addTab(self.tab_general, "⚙️ 核心与感知")
+        self.tabs.addTab(self.tab_avatar, "👗 立绘与表情工坊")
+        self.tabs.addTab(self.tab_persona, "🎭 人设与口癖调教")
+        self.tabs.addTab(self.tab_logs, "📜 实时日志与记录")
+
+        self._build_general_tab()
+        self._build_avatar_tab()
+        self._build_persona_tab()
+        self._build_logs_tab()
+
+        # Bottom Bar
+        bottom_bar = QHBoxLayout()
+        bottom_bar.setContentsMargins(4, 4, 4, 0)
+
+        self.btn_manual_test = QPushButton("⚡ 立即让哈Gemi锐评测试", self)
+        self.btn_manual_test.setObjectName("SecondaryBtn")
+        self.btn_manual_test.clicked.connect(self.request_manual_critique.emit)
+        bottom_bar.addWidget(self.btn_manual_test)
+
+        bottom_bar.addStretch()
+
+        self.btn_save = QPushButton("💾 保存并立即生效", self)
+        self.btn_save.clicked.connect(self.save_and_apply)
+        bottom_bar.addWidget(self.btn_save)
+
+        self.btn_hide = QPushButton("🐾 最小化到托盘", self)
+        self.btn_hide.setObjectName("SecondaryBtn")
+        self.btn_hide.clicked.connect(self.hide)
+        bottom_bar.addWidget(self.btn_hide)
+
+        main_layout.addLayout(bottom_bar)
+
+    # ==========================
+    # Tab 1: General & Senses
+    # ==========================
+    def _build_general_tab(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(14)
+
+        # 1. API Box
+        box_api = QGroupBox("🔑 AI 算力与大模型接口设置")
+        box_api_l = QGridLayout(box_api)
+        box_api_l.setSpacing(10)
+
+        # Provider Selector
+        box_api_l.addWidget(QLabel("接口类型 (Provider):"), 0, 0)
+        self.combo_provider = QComboBox()
+        self.combo_provider.addItem("Google Gemini 官方原生接口", "gemini")
+        self.combo_provider.addItem("OpenRouter / OpenAI 兼容接口 (第三方/中转/自定义)", "openai_compatible")
+        self.combo_provider.currentIndexChanged.connect(self._on_provider_changed)
+        box_api_l.addWidget(self.combo_provider, 0, 1, 1, 3)
+
+        # API Base URL
+        self.lbl_api_url = QLabel("API 接口地址 (URL):")
+        box_api_l.addWidget(self.lbl_api_url, 1, 0)
+        self.input_api_url = QLineEdit()
+        self.input_api_url.setPlaceholderText("https://openrouter.ai/api/v1 或中转站地址")
+        box_api_l.addWidget(self.input_api_url, 1, 1, 1, 3)
+
+        # API Key
+        self.lbl_key = QLabel("API 密钥 (API Key):")
+        box_api_l.addWidget(self.lbl_key, 2, 0)
+        self.input_key = QLineEdit()
+        self.input_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_key.setPlaceholderText("填入 API 密钥")
+        box_api_l.addWidget(self.input_key, 2, 1)
+
+        self.btn_show_key = QPushButton("👁️ 显示")
+        self.btn_show_key.setObjectName("SecondaryBtn")
+        self.btn_show_key.setFixedWidth(75)
+        self.btn_show_key.clicked.connect(self._toggle_key_visibility)
+        box_api_l.addWidget(self.btn_show_key, 2, 2)
+
+        self.btn_test_key = QPushButton("⚡ 测试连接")
+        self.btn_test_key.setObjectName("SecondaryBtn")
+        self.btn_test_key.setFixedWidth(90)
+        self.btn_test_key.clicked.connect(self._test_api_connection)
+        box_api_l.addWidget(self.btn_test_key, 2, 3)
+
+        # Model Selector (Editable)
+        box_api_l.addWidget(QLabel("视觉推理模型 (Model):"), 3, 0)
+        self.combo_model = QComboBox()
+        self.combo_model.setEditable(True)
+        box_api_l.addWidget(self.combo_model, 3, 1, 1, 3)
+
+        layout.addWidget(box_api)
+
+        # 2. Perception & Autostart Box
+        box_sense = QGroupBox("👁️ 自动感知与场景设置")
+        box_sense_l = QGridLayout(box_sense)
+
+        self.chk_auto = QCheckBox("启用全自动感知模式（定时巡逻屏幕与活跃窗口）")
+        box_sense_l.addWidget(self.chk_auto, 0, 0, 1, 2)
+
+        box_sense_l.addWidget(QLabel("自动锐评冷却时间:"), 1, 0)
+        cooldown_box = QHBoxLayout()
+        self.slider_cooldown = QSlider(Qt.Orientation.Horizontal)
+        self.slider_cooldown.setRange(15, 120)
+        self.lbl_cooldown_val = QLabel("45 秒")
+        self.slider_cooldown.valueChanged.connect(lambda v: self.lbl_cooldown_val.setText(f"{v} 秒"))
+        cooldown_box.addWidget(self.slider_cooldown)
+        cooldown_box.addWidget(self.lbl_cooldown_val)
+        box_sense_l.addLayout(cooldown_box, 1, 1)
+
+        # Scene preference checkboxes
+        scene_h = QHBoxLayout()
+        self.chk_game = QCheckBox("🎮 打游戏战况锐评")
+        self.chk_video = QCheckBox("🎬 看视频/直播弹幕互动")
+        self.chk_work = QCheckBox("💻 码字/写代码摸鱼抓包")
+        scene_h.addWidget(self.chk_game)
+        scene_h.addWidget(self.chk_video)
+        scene_h.addWidget(self.chk_work)
+        box_sense_l.addLayout(scene_h, 2, 0, 1, 2)
+
+        # Autostart checkbox
+        self.chk_autostart = QCheckBox("🚀 开机自动在后台启动哈Gemi (Windows 自启动)")
+        box_sense_l.addWidget(self.chk_autostart, 3, 0, 1, 2)
+
+        layout.addWidget(box_sense)
+
+        # 3. Voice & Appearance Box
+        box_voice = QGroupBox("🔊 语音播报 (TTS) 与桌宠外观")
+        box_voice_l = QGridLayout(box_voice)
+
+        self.chk_tts = QCheckBox("启用少女音语音吐槽播报")
+        box_voice_l.addWidget(self.chk_tts, 0, 0)
+
+        box_voice_l.addWidget(QLabel("语音音色:"), 1, 0)
+        self.combo_voice = QComboBox()
+        for v_id, label in TTS_VOICES:
+            self.combo_voice.addItem(label, v_id)
+        box_voice_l.addWidget(self.combo_voice, 1, 1)
+
+        self.btn_test_tts = QPushButton("🔊 试听发音")
+        self.btn_test_tts.setObjectName("SecondaryBtn")
+        self.btn_test_tts.clicked.connect(self._test_voice)
+        box_voice_l.addWidget(self.btn_test_tts, 1, 2)
+
+        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 2, 0)
+        size_box = QHBoxLayout()
+        self.slider_height = QSlider(Qt.Orientation.Horizontal)
+        self.slider_height.setRange(160, 380)
+        self.lbl_height_val = QLabel("250 px")
+        self.slider_height.valueChanged.connect(lambda v: self.lbl_height_val.setText(f"{v} px"))
+        size_box.addWidget(self.slider_height)
+        size_box.addWidget(self.lbl_height_val)
+        box_voice_l.addLayout(size_box, 2, 1, 1, 2)
+
+        layout.addWidget(box_voice)
+
+        scroll.setWidget(content)
+        v = QVBoxLayout(self.tab_general)
+        v.addWidget(scroll)
+
+    # ==========================
+    # Tab 2: Avatar & Outfits
+    # ==========================
+    def _build_avatar_tab(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(16)
+
+        desc = QLabel("💡 在这里可以为哈Gemi的 4 套情绪表情上传自定义立绘。支持 PNG、JPG、WebP，可一键自动去除白色背景！")
+        desc.setStyleSheet("color: #ff99bb; font-size: 12px;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        self.outfit_cards = {}
+        emotions = [
+            ("confident", "⭐ 自信傲娇 (默认站姿)", "avatar_standing.png", "日常元气站姿、傲娇嘴硬或调侃"),
+            ("curious", "🐾 呆萌疑惑 (Q版抓头)", "avatar_bust.png", "盯——、摸鱼抓现行、感到疑惑"),
+            ("shocked", "😱 抱头震惊 (抓狂冒汗)", "avatar_shocked.png", "游戏离谱暴毙、下饭反转、弹幕刷问号"),
+            ("relieved", "💦 害羞擦汗 (无语扶额)", "avatar_relieved.png", "代码满屏报错、长吁短叹、感到无语")
+        ]
+
+        grid = QGridLayout()
+        grid.setSpacing(14)
+
+        for idx, (emo_key, title, default_fn, tip) in enumerate(emotions):
+            card = QFrame()
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: #241d3d;
+                    border: 1px solid #3d335c;
+                    border-radius: 8px;
+                    padding: 8px;
+                }
+            """)
+            card_l = QVBoxLayout(card)
+            card_l.setSpacing(6)
+
+            lbl_t = QLabel(title)
+            lbl_t.setStyleSheet("font-weight: bold; color: #ff7aa6; font-size: 13px;")
+            card_l.addWidget(lbl_t)
+
+            lbl_tip = QLabel(tip)
+            lbl_tip.setStyleSheet("color: #a49cb8; font-size: 11px;")
+            card_l.addWidget(lbl_tip)
+
+            # Preview label
+            lbl_prev = QLabel()
+            lbl_prev.setFixedSize(140, 160)
+            lbl_prev.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_prev.setStyleSheet("background-color: #171326; border-radius: 6px; border: 1px dashed #3d335c;")
+            card_l.addWidget(lbl_prev, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            # Buttons
+            btn_h = QHBoxLayout()
+            btn_upload = QPushButton("📁 更换图片")
+            btn_upload.setObjectName("SecondaryBtn")
+            btn_upload.clicked.connect(lambda checked=False, k=emo_key: self._upload_avatar(k))
+            btn_h.addWidget(btn_upload)
+
+            btn_reset = QPushButton("🔄 默认")
+            btn_reset.setObjectName("SecondaryBtn")
+            btn_reset.clicked.connect(lambda checked=False, k=emo_key, df=default_fn: self._reset_avatar(k, df))
+            btn_h.addWidget(btn_reset)
+            card_l.addLayout(btn_h)
+
+            row = idx // 2
+            col = idx % 2
+            grid.addWidget(card, row, col)
+
+            self.outfit_cards[emo_key] = {
+                "label_prev": lbl_prev,
+                "filename": default_fn,
+                "default_fn": default_fn
+            }
+
+        layout.addLayout(grid)
+        scroll.setWidget(content)
+        v = QVBoxLayout(self.tab_avatar)
+        v.addWidget(scroll)
+
+    # ==========================
+    # Tab 3: Persona & Prompt
+    # ==========================
+    def _build_persona_tab(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(14)
+
+        box_p = QGroupBox("🐾 角色基本设定与口癖")
+        box_p_l = QGridLayout(box_p)
+
+        box_p_l.addWidget(QLabel("桌宠名字:"), 0, 0)
+        self.input_name = QLineEdit()
+        self.input_name.setPlaceholderText("例如: 哈Gemi")
+        box_p_l.addWidget(self.input_name, 0, 1)
+
+        box_p_l.addWidget(QLabel("常用口癖 (英文或中文逗号分隔):"), 1, 0)
+        self.input_catchphrases = QLineEdit()
+        self.input_catchphrases.setPlaceholderText("例如: 喵~, 喵？！, 哼~, 盯——, 笨蛋主人")
+        box_p_l.addWidget(self.input_catchphrases, 1, 1)
+
+        box_p_l.addWidget(QLabel("快速性格预设:"), 2, 0)
+        self.combo_persona = QComboBox()
+        self.combo_persona.addItems(list(PERSONA_PRESETS.keys()))
+        self.combo_persona.currentTextChanged.connect(self._on_persona_preset_changed)
+        box_p_l.addWidget(self.combo_persona, 2, 1)
+
+        self.lbl_persona_desc = QLabel()
+        self.lbl_persona_desc.setStyleSheet("color: #a49cb8; font-size: 11px;")
+        box_p_l.addWidget(self.lbl_persona_desc, 3, 1)
+
+        layout.addWidget(box_p)
+
+        box_custom = QGroupBox("🧠 高级自定义 System Prompt (留空则使用内置精调设定)")
+        box_c_l = QVBoxLayout(box_custom)
+
+        self.txt_custom_prompt = QTextEdit()
+        self.txt_custom_prompt.setPlaceholderText("在这里可自定义完整的猫娘 Prompt 指令。留空会自动应用上方的口癖和性格预设~")
+        box_c_l.addWidget(self.txt_custom_prompt)
+
+        btn_h = QHBoxLayout()
+        btn_reset_prompt = QPushButton("🔄 一键恢复官方推荐 Prompt")
+        btn_reset_prompt.setObjectName("SecondaryBtn")
+        btn_reset_prompt.clicked.connect(lambda: self.txt_custom_prompt.clear())
+        btn_h.addWidget(btn_reset_prompt)
+        btn_h.addStretch()
+        box_c_l.addLayout(btn_h)
+
+        layout.addWidget(box_custom)
+
+        scroll.setWidget(content)
+        v = QVBoxLayout(self.tab_persona)
+        v.addWidget(scroll)
+
+    # ==========================
+    # Tab 4: Live Logs
+    # ==========================
+    def _build_logs_tab(self):
+        layout = QVBoxLayout(self.tab_logs)
+        layout.setSpacing(10)
+
+        # Toolbar
+        tb = QHBoxLayout()
+        lbl = QLabel("实时感知流水线与 AI 锐评记录:")
+        lbl.setStyleSheet("font-weight: bold; color: #ff7aa6;")
+        tb.addWidget(lbl)
+        tb.addStretch()
+
+        btn_clear = QPushButton("🧹 清空日志")
+        btn_clear.setObjectName("SecondaryBtn")
+        btn_clear.clicked.connect(self._clear_logs)
+        tb.addWidget(btn_clear)
+
+        layout.addLayout(tb)
+
+        self.log_browser = QTextBrowser()
+        self.log_browser.setStyleSheet("""
+            QTextBrowser {
+                background-color: #120f20;
+                border: 1.5px solid #2e2647;
+                border-radius: 8px;
+                padding: 10px;
+                font-family: "Consolas", "Microsoft YaHei Mono", monospace;
+                font-size: 12px;
+                line-height: 140%;
+            }
+        """)
+        layout.addWidget(self.log_browser)
+
+    # ==========================
+    # Logic & Event Handlers
+    # ==========================
+    def _load_values(self):
+        cfg = self.config_mgr.config
+
+        # 1. General & API
+        prov = cfg.get("api_provider", "gemini")
+        idx = self.combo_provider.findData(prov)
+        if idx >= 0:
+            self.combo_provider.setCurrentIndex(idx)
+        else:
+            self.combo_provider.setCurrentIndex(0)
+
+        self.input_api_url.setText(cfg.get("custom_api_url", "https://openrouter.ai/api/v1"))
+        self._on_provider_changed()
+
+        self.input_key.setText(cfg.get("api_key", ""))
+        self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
+        self.chk_auto.setChecked(cfg.get("auto_mode", True))
+        self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
+        self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
+
+        self.chk_game.setChecked(cfg.get("comment_on_games", True))
+        self.chk_video.setChecked(cfg.get("comment_on_videos", True))
+        self.chk_work.setChecked(cfg.get("comment_on_work", True))
+
+        self.chk_autostart.setChecked(self.config_mgr.is_autostart_enabled())
+
+        self.chk_tts.setChecked(cfg.get("enable_tts", True))
+        current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
+        for i in range(self.combo_voice.count()):
+            if self.combo_voice.itemData(i) == current_voice:
+                self.combo_voice.setCurrentIndex(i)
+                break
+
+        self.slider_height.setValue(int(cfg.get("target_height", 250)))
+        self.lbl_height_val.setText(f"{self.slider_height.value()} px")
+
+        # 2. Avatar Outfits
+        outfits = cfg.get("outfits", {})
+        for emo, card in self.outfit_cards.items():
+            fn = outfits.get(emo, card["default_fn"])
+            card["filename"] = fn
+            self._refresh_avatar_preview(emo, fn)
+
+        # 3. Persona
+        self.input_name.setText(cfg.get("pet_name", "哈Gemi"))
+        c_list = cfg.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
+        self.input_catchphrases.setText(", ".join(c_list))
+
+        p_style = cfg.get("persona_style", "元气毒舌 (默认)")
+        if p_style in PERSONA_PRESETS:
+            self.combo_persona.setCurrentText(p_style)
+        self._on_persona_preset_changed(self.combo_persona.currentText())
+
+        self.txt_custom_prompt.setPlainText(cfg.get("custom_system_prompt", ""))
+
+    def _refresh_avatar_preview(self, emo_key: str, filename: str):
+        full_path = os.path.join(ASSETS_DIR, filename)
+        lbl = self.outfit_cards[emo_key]["label_prev"]
+        if os.path.exists(full_path):
+            pix = QPixmap(full_path)
+            scaled = pix.scaled(130, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            lbl.setPixmap(scaled)
+        else:
+            lbl.setText("暂无图片")
+
+    def _upload_avatar(self, emo_key: str):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择立绘图片", "", "图片文件 (*.png *.jpg *.jpeg *.webp *.bmp)"
+        )
+        if not file_path:
+            return
+
+        # Ask if user wants to auto remove white background
+        ret = QMessageBox.question(
+            self, "透明通道处理",
+            "所选图片是否含有白色背景？\n点击【是】将自动智能抠除白色背景为透明通道，点击【否】直接保留原图格式。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+
+        out_name = f"custom_{emo_key}_{int(time.time())}.png"
+        out_path = os.path.join(ASSETS_DIR, out_name)
+
+        if ret == QMessageBox.StandardButton.Yes:
+            ok = remove_white_background(file_path, out_path, tolerance=22)
+            if not ok:
+                shutil.copy2(file_path, out_path)
+        else:
+            # Direct convert / copy to PNG
+            shutil.copy2(file_path, out_path)
+
+        self.outfit_cards[emo_key]["filename"] = out_name
+        self._refresh_avatar_preview(emo_key, out_name)
+        QMessageBox.information(self, "成功", f"表情【{emo_key}】立绘已成功更新并保存！")
+
+    def _reset_avatar(self, emo_key: str, default_fn: str):
+        self.outfit_cards[emo_key]["filename"] = default_fn
+        self._refresh_avatar_preview(emo_key, default_fn)
+
+    def _on_provider_changed(self):
+        prov = self.combo_provider.currentData()
+        curr_text = self.combo_model.currentText()
+        self.combo_model.clear()
+        if prov == "gemini":
+            self.lbl_api_url.setVisible(False)
+            self.input_api_url.setVisible(False)
+            self.lbl_key.setText("Gemini API Key:")
+            self.input_key.setPlaceholderText("填入 AIzaSy... 开头的 Gemini 官方 API 密钥")
+            items = [
+                "gemini-3.8-flash",
+                "gemini-2.5-flash",
+                "gemini-1.5-pro",
+                "gemini-1.5-flash"
+            ]
+            self.combo_model.addItems(items)
+            if curr_text in items:
+                self.combo_model.setCurrentText(curr_text)
+            else:
+                self.combo_model.setCurrentIndex(0)
+        else:
+            self.lbl_api_url.setVisible(True)
+            self.input_api_url.setVisible(True)
+            self.lbl_key.setText("OpenRouter / API Key:")
+            self.input_key.setPlaceholderText("填入 sk-or-v1-... 或 sk-... 密钥")
+            items = [
+                "google/gemini-2.5-flash",
+                "google/gemini-flash-1.5",
+                "anthropic/claude-3.5-sonnet",
+                "openai/gpt-4o-mini",
+                "openai/gpt-4o",
+                "deepseek/deepseek-chat"
+            ]
+            self.combo_model.addItems(items)
+            if curr_text:
+                self.combo_model.setCurrentText(curr_text)
+            else:
+                self.combo_model.setCurrentIndex(0)
+
+    def _on_persona_preset_changed(self, text: str):
+        if text in PERSONA_PRESETS:
+            p = PERSONA_PRESETS[text]
+            self.lbl_persona_desc.setText(f"说明: {p['desc']}")
+
+    def _toggle_key_visibility(self):
+        if self.input_key.echoMode() == QLineEdit.EchoMode.Password:
+            self.input_key.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.btn_show_key.setText("🔒 隐藏")
+        else:
+            self.input_key.setEchoMode(QLineEdit.EchoMode.Password)
+            self.btn_show_key.setText("👁️ 显示")
+
+    def _test_api_connection(self):
+        prov = self.combo_provider.currentData()
+        key = self.input_key.text().strip()
+        model = self.combo_model.currentText().strip()
+        custom_url = self.input_api_url.text().strip()
+
+        if not key:
+            QMessageBox.warning(self, "提示", "请先填入 API Key！")
+            return
+
+        from brain.gemini_client import GeminiCritiqueEngine
+        engine = GeminiCritiqueEngine()
+        ok, msg = engine.test_connection(key=key, model=model, provider=prov, custom_url=custom_url)
+        if ok:
+            QMessageBox.information(self, "连接成功", f"🎉 {msg}")
+        else:
+            QMessageBox.critical(self, "连接失败", f"❌ {msg}")
+
+    def _test_voice(self):
+        voice = self.combo_voice.currentData()
+        from tts.edge_speaker import EdgeSpeaker
+        speaker = EdgeSpeaker(voice=voice, enabled=True)
+        name = self.input_name.text().strip() or "哈Gemi"
+        speaker.speak_async(f"主人你好呀！我是你的桌面专属猫娘{name}喵~")
+
+    def _clear_logs(self):
+        self.log_browser.clear()
+
+    def _append_log(self, t_str: str, level: str, text: str):
+        color_map = {
+            "INFO": "#8ce99a",
+            "CRITIQUE": "#ff79c6",
+            "SCENE": "#8be9fd",
+            "ERROR": "#ff5555"
+        }
+        color = color_map.get(level, "#ffffff")
+        html = f"<span style='color:#6272a4;'>[{t_str}]</span> <span style='color:{color}; font-weight:bold;'>[{level}]</span> <span style='color:#f8f8f2;'>{text}</span>"
+        self.log_browser.append(html)
+
+    def save_and_apply(self):
+        # Gather all values
+        api_provider = self.combo_provider.currentData()
+        custom_api_url = self.input_api_url.text().strip() or "https://openrouter.ai/api/v1"
+        key = self.input_key.text().strip()
+        model = self.combo_model.currentText().strip()
+        auto_mode = self.chk_auto.isChecked()
+        cooldown = self.slider_cooldown.value()
+        comment_games = self.chk_game.isChecked()
+        comment_videos = self.chk_video.isChecked()
+        comment_work = self.chk_work.isChecked()
+
+        enable_tts = self.chk_tts.isChecked()
+        tts_voice = self.combo_voice.currentData()
+        target_height = self.slider_height.value()
+
+        pet_name = self.input_name.text().strip() or "哈Gemi"
+        c_raw = self.input_catchphrases.text().replace("，", ",")
+        catchphrases = [c.strip() for c in c_raw.split(",") if c.strip()]
+        if not catchphrases:
+            catchphrases = ["喵~", "喵？！", "哼~", "盯——"]
+
+        persona_style = self.combo_persona.currentText()
+        custom_prompt = self.txt_custom_prompt.toPlainText().strip()
+
+        outfits = {emo: card["filename"] for emo, card in self.outfit_cards.items()}
+
+        # Save to config
+        new_cfg = {
+            "api_provider": api_provider,
+            "custom_api_url": custom_api_url,
+            "api_key": key,
+            "model": model,
+            "auto_mode": auto_mode,
+            "cooldown_seconds": cooldown,
+            "comment_on_games": comment_games,
+            "comment_on_videos": comment_videos,
+            "comment_on_work": comment_work,
+            "enable_tts": enable_tts,
+            "tts_voice": tts_voice,
+            "target_height": target_height,
+            "pet_name": pet_name,
+            "catchphrases": catchphrases,
+            "persona_style": persona_style,
+            "custom_system_prompt": custom_prompt,
+            "outfits": outfits
+        }
+        self.config_mgr.save(new_cfg)
+
+        # Autostart
+        self.config_mgr.set_autostart(self.chk_autostart.isChecked())
+
+        # Notify running app
+        self.settings_applied.emit()
+        self.logger.info("用户保存并应用了新的控制台设置！")
+
+        QMessageBox.information(self, "已保存", "✨ 设置已成功保存并立即同步至桌面桌宠！")
