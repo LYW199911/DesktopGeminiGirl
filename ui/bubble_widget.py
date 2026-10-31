@@ -183,7 +183,7 @@ class SpeechBubble(QWidget):
         painter.drawLine(tail_tip_x, tail_tip_y, tail_start_x + 18, cr.bottom() - 1)
 
     def _apply_text_and_resize(self, text: str):
-        """Immediately sets text, measures height, and applies exact dimensions."""
+        """Immediately sets text, measures height, and applies exact dimensions without height accumulation."""
         self._full_text = text
         length = len(text)
         if length <= 25:
@@ -196,14 +196,21 @@ class SpeechBubble(QWidget):
             target_width = 520
 
         avail_w = target_width - 50
+        # Reset constraints on label before measuring so previous size never accumulates
+        self.label.setMinimumSize(0, 0)
+        self.label.setMaximumSize(16777215, 16777215)
         self.label.setText(text)
+
+        # Precise font bounding rect for text word wrap
+        fm = self.label.fontMetrics()
+        rect = fm.boundingRect(0, 0, avail_w, 2000, Qt.TextFlag.TextWordWrap, text)
+        lbl_h = max(22, rect.height() + 4)
         self.label.setFixedWidth(avail_w)
-        lbl_h = max(24, self.label.heightForWidth(avail_w) + 8)
         self.label.setFixedHeight(lbl_h)
 
         # Fixed vertical heights:
-        # card margins(22) + top_bar(22) + spacing(12) + reply_bar(28) + outer margins(26) = 110
-        target_height = max(140, 110 + lbl_h + 8)
+        # card margins(22) + top_bar(22) + spacing(12) + reply_bar(26) + outer margins(26) = 108
+        target_height = lbl_h + 108
         self.setFixedSize(target_width, target_height)
 
     def show_text(self, text: str, duration_ms: Optional[int] = None):
