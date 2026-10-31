@@ -14,10 +14,12 @@ if getattr(sys, 'frozen', False):
         os.makedirs(ASSETS_DIR, exist_ok=True)
 
     CONFIG_FILE = os.path.join(APP_DIR, "config.json")
+    MEMORY_FILE = os.path.join(APP_DIR, "memory.json")
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     ASSETS_DIR = os.path.join(BASE_DIR, "assets")
     CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+    MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
 
 ICON_PATH = os.path.join(ASSETS_DIR, "app_icon.ico")
 if not os.path.exists(ICON_PATH):

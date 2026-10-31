@@ -1,5 +1,6 @@
-# Local Configuration (contains user API Keys - DO NOT COMMIT!)
+# Local Configuration (contains user API Keys & private chat memory - DO NOT COMMIT!)
 config.json
+memory.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

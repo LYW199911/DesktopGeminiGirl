@@ -14,6 +14,7 @@
   "comment_on_games": true,
   "comment_on_videos": true,
   "comment_on_work": true,
+  "enable_persistent_memory": true,
   "pet_name": "哈Gemi",
   "catchphrases": [
     "喵~",

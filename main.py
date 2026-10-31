@@ -93,8 +93,14 @@ class DesktopPetController(QObject):
 
         # Startup Log & Greet
         pet_name = self.config_mgr.get("pet_name", "哈Gemi")
-        self.logger.info(f"{pet_name} 启动就位！双击托盘图标或右键桌宠可打开设置中心。")
-        QTimer.singleShot(1000, lambda: self.critique_ready.emit(f"{pet_name}已就位！随时按 Ctrl+F9 接受本喵的锐评吧！"))
+        mem_count = len(self.engine.context_memory.history)
+        if mem_count > 0:
+            greet_msg = f"{pet_name}已就位喵~ 已加载 {mem_count} 条前情记忆，随时按 Ctrl+F9 呼叫锐评吧！"
+            self.logger.info(f"{pet_name} 启动就位！(已加载 {mem_count} 条前情记忆) 双击托盘图标或右键桌宠可打开设置中心。")
+        else:
+            greet_msg = f"{pet_name}已就位！随时按 Ctrl+F9 接受本喵的锐评吧！"
+            self.logger.info(f"{pet_name} 启动就位！双击托盘图标或右键桌宠可打开设置中心。")
+        QTimer.singleShot(1000, lambda: self.critique_ready.emit(greet_msg))
 
     def show_settings(self):
         self.settings_win.show()

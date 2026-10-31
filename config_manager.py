@@ -26,6 +26,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "comment_on_games": True,
     "comment_on_videos": True,
     "comment_on_work": True,
+    "enable_persistent_memory": True,
     "pet_name": "哈Gemi",
     "catchphrases": ["喵~", "喵？！", "哼~", "盯——"],
     "persona_style": "元气毒舌",

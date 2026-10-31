@@ -317,6 +317,10 @@ class SettingsWindow(QMainWindow):
         self.chk_autostart = QCheckBox("开机自动在后台启动哈Gemi (Windows 自启动)")
         box_sense_l.addWidget(self.chk_autostart, 3, 0, 1, 2)
 
+        # Persistent Memory checkbox
+        self.chk_memory = QCheckBox("开启长期记忆 (跨会话/开机后依然记住前情，保存在本地 memory.json)")
+        box_sense_l.addWidget(self.chk_memory, 4, 0, 1, 2)
+
         layout.addWidget(box_sense)
 
         # 3. Voice & Appearance Box
@@ -524,6 +528,30 @@ class SettingsWindow(QMainWindow):
 
         layout.addLayout(tb)
 
+        # Toolbar 2: Persistent Memory
+        tb_mem = QHBoxLayout()
+        self.lbl_mem_info = QLabel("长期记忆管理 (memory.json):")
+        self.lbl_mem_info.setStyleSheet("font-weight: bold; color: #f1fa8c;")
+        tb_mem.addWidget(self.lbl_mem_info)
+        tb_mem.addStretch()
+
+        btn_view_mem = QPushButton("查看记忆明细")
+        btn_view_mem.setObjectName("SecondaryBtn")
+        btn_view_mem.clicked.connect(self._view_memory_details)
+        tb_mem.addWidget(btn_view_mem)
+
+        btn_open_mem = QPushButton("打开记忆文件")
+        btn_open_mem.setObjectName("SecondaryBtn")
+        btn_open_mem.clicked.connect(self._open_memory_file)
+        tb_mem.addWidget(btn_open_mem)
+
+        btn_clear_mem = QPushButton("清空长期记忆")
+        btn_clear_mem.setObjectName("SecondaryBtn")
+        btn_clear_mem.clicked.connect(self._clear_memory)
+        tb_mem.addWidget(btn_clear_mem)
+
+        layout.addLayout(tb_mem)
+
         self.log_browser = QTextBrowser()
         self.log_browser.setStyleSheet("""
             QTextBrowser {
@@ -568,6 +596,7 @@ class SettingsWindow(QMainWindow):
             self.chk_work.setChecked(cfg.get("comment_on_work", True))
 
             self.chk_autostart.setChecked(self.config_mgr.is_autostart_enabled())
+            self.chk_memory.setChecked(cfg.get("enable_persistent_memory", True))
 
             self.chk_tts.setChecked(cfg.get("enable_tts", True))
             current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
@@ -753,6 +782,50 @@ class SettingsWindow(QMainWindow):
         self.logger.clear()
         self.log_browser.clear()
 
+    def _view_memory_details(self):
+        from brain.context_memory import ContextMemoryManager
+        memories = ContextMemoryManager().get_all_memories()
+        self.log_browser.append("<br><span style='color:#f1fa8c; font-weight:bold;'>=== 长期上下文记忆明细库 (memory.json) ===</span>")
+        if not memories:
+            self.log_browser.append("<span style='color:#6272a4;'>[提示] 暂无持久化记忆记录，和哈Gemi一起看视频或吐槽互动后会自动生成喵~</span>")
+        else:
+            self.log_browser.append(f"<span style='color:#50fa7b;'>共记录 {len(memories)} 条跨会话前情回忆：</span>")
+            for idx, m in enumerate(memories):
+                dt = m.get("datetime", "近期")
+                scene = m.get("scene", "general")
+                title = m.get("title", "桌面互动")
+                text = m.get("text", "")
+                self.log_browser.append(
+                    f"<span style='color:#bd93f9;'>#{idx+1} [{dt}] [{scene}]</span> "
+                    f"<span style='color:#8be9fd;'>{title[:25]}...</span><br>"
+                    f"&nbsp;&nbsp;<span style='color:#f8f8f2;'>{text}</span>"
+                )
+        self.log_browser.moveCursor(QTextCursor.MoveOperation.End)
+
+    def _open_memory_file(self):
+        from app_paths import MEMORY_FILE
+        if os.path.exists(MEMORY_FILE):
+            try:
+                os.startfile(MEMORY_FILE)
+            except Exception as e:
+                QMessageBox.warning(self, "错误", f"无法打开记忆文件: {e}")
+        else:
+            QMessageBox.information(self, "提示", "记忆文件尚未生成（和哈Gemi产生互动后会自动写入本地 memory.json 喵）。")
+
+    def _clear_memory(self):
+        ret = QMessageBox.question(
+            self, "清空长期记忆",
+            "确定要清空所有的前情记忆吗？\n清空后哈Gemi将忘掉之前所有的视频/游戏吐槽记忆，回到最初的初见状态喵！",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if ret == QMessageBox.StandardButton.Yes:
+            from brain.context_memory import ContextMemoryManager
+            ContextMemoryManager().clear()
+            self.logger.info("用户在控制台清空了全部前情上下文记忆！")
+            self.log_browser.append("<br><span style='color:#ff5555; font-weight:bold;'>[MEMORY] 长期上下文记忆已全部清空归零。</span>")
+            QMessageBox.information(self, "已清空", "长期记忆已全部清空归零喵！")
+
     def _append_log(self, t_str: str, level: str, text: str):
         color_map = {
             "INFO": "#8ce99a",
@@ -777,6 +850,7 @@ class SettingsWindow(QMainWindow):
         comment_games = self.chk_game.isChecked()
         comment_videos = self.chk_video.isChecked()
         comment_work = self.chk_work.isChecked()
+        enable_persistent_memory = self.chk_memory.isChecked()
 
         enable_tts = self.chk_tts.isChecked()
         tts_voice = self.combo_voice.currentData()
@@ -804,6 +878,7 @@ class SettingsWindow(QMainWindow):
             "comment_on_games": comment_games,
             "comment_on_videos": comment_videos,
             "comment_on_work": comment_work,
+            "enable_persistent_memory": enable_persistent_memory,
             "enable_tts": enable_tts,
             "tts_voice": tts_voice,
             "target_height": target_height,
