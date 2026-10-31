@@ -12,13 +12,13 @@ class SpeechBubble(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 
             Qt.WindowType.WindowStaysOnTopHint | 
-            Qt.WindowType.ToolTip
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
         self._full_text = ""
-        self._current_index = 0
+        self._is_updating = False
 
         # Outer Layout
         main_layout = QVBoxLayout(self)
@@ -36,7 +36,7 @@ class SpeechBubble(QWidget):
         """)
 
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(15, 10, 15, 14)
+        card_layout.setContentsMargins(15, 10, 15, 12)
         card_layout.setSpacing(6)
 
         # Header: Title + Close Button (×)
@@ -81,7 +81,7 @@ class SpeechBubble(QWidget):
 
         card_layout.addLayout(top_bar)
 
-        # Content Label: Crisp Black Bold Text on White Background
+        # Content Label: Crisp Bold Text on White Background
         self.label = QLabel(self.card)
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -152,10 +152,6 @@ class SpeechBubble(QWidget):
 
         main_layout.addWidget(self.card)
 
-        # Typewriter timer
-        self.type_timer = QTimer(self)
-        self.type_timer.timeout.connect(self._type_next_char)
-
         # Auto hide timer
         self.hide_timer = QTimer(self)
         self.hide_timer.setSingleShot(True)
@@ -186,58 +182,88 @@ class SpeechBubble(QWidget):
         painter.drawLine(tail_start_x, cr.bottom() - 1, tail_tip_x, tail_tip_y)
         painter.drawLine(tail_tip_x, tail_tip_y, tail_start_x + 18, cr.bottom() - 1)
 
+    def _apply_text_and_resize(self, text: str):
+        """Immediately sets text, measures height, and applies exact dimensions."""
+        self._full_text = text
+        length = len(text)
+        if length <= 25:
+            target_width = 340
+        elif length <= 55:
+            target_width = 400
+        elif length <= 85:
+            target_width = 460
+        else:
+            target_width = 520
+
+        avail_w = target_width - 50
+        self.label.setText(text)
+        self.label.setFixedWidth(avail_w)
+        lbl_h = max(24, self.label.heightForWidth(avail_w) + 8)
+        self.label.setFixedHeight(lbl_h)
+
+        # Fixed vertical heights:
+        # card margins(22) + top_bar(22) + spacing(12) + reply_bar(28) + outer margins(26) = 110
+        target_height = max(140, 110 + lbl_h + 8)
+        self.setFixedSize(target_width, target_height)
+
     def show_text(self, text: str, duration_ms: Optional[int] = None):
-        self.type_timer.stop()
+        """Displays new critique text immediately and synchronizes with TTS audio."""
+        self._is_updating = True
         self.hide_timer.stop()
 
-        self._full_text = text
-        self._current_index = 0
+        self._apply_text_and_resize(text)
 
-        # Reset and clear reply input line so old inputs don't linger
+        # Clear and reset reply input line
         self.input_reply.clear()
         self.input_reply.clearFocus()
         self.input_reply.setEnabled(True)
         self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
         self.btn_send.setEnabled(True)
 
-        # Dynamic resizing based on text character count (accommodating input row)
-        length = len(text)
-        if length <= 20:
-            target_width = 330
-        elif length <= 45:
-            target_width = 380
-        elif length <= 70:
-            target_width = 430
-        else:
-            target_width = 480
-
-        # Calculate exact text bounding rect using font metrics to prevent any vertical squishing/clipping
-        fm = self.label.fontMetrics()
-        available_text_w = max(240, target_width - 50)
-        text_rect = fm.boundingRect(0, 0, available_text_w, 2000, Qt.TextFlag.TextWordWrap, text)
-        needed_text_h = max(24, text_rect.height() + 8)
-        self.label.setMinimumHeight(needed_text_h)
-
-        # Full bubble height: outer margins(26) + card margins(24) + top_bar(22) + spacing(12) + reply_bar(30) + needed_text_h + tail cushion(8)
-        target_height = max(140, 26 + 24 + 22 + 12 + 30 + needed_text_h + 8)
-
-        # LOCK exact dimensions so window never collapses or flickers during typing
-        self.setFixedSize(target_width, target_height)
-
-        # Reset text for typewriter effect and force top-level window buffer update
-        self.label.setText("")
-        self.update()
-
         self.show()
         self.raise_()
 
-        # Dynamic duration: longer text gets more reading time (minimum 10s for interaction)
-        if duration_ms is None:
-            duration_ms = max(10000, 8000 + length * 80)
+        # Synchronously repaint child and top-level layered buffers to flush to DWM
+        self.card.repaint()
+        self.label.repaint()
+        self.repaint()
 
-        # Start typewriter effect
-        self.type_timer.start(25)
+        self._is_updating = False
+
+        # Dynamic reading duration (minimum 10s for interaction)
+        if duration_ms is None:
+            duration_ms = max(10000, 8000 + len(text) * 80)
         self.hide_timer.start(duration_ms)
+
+    def reopen_last(self) -> bool:
+        """Reopens the last critique bubble with full text and focused input box."""
+        if not self._full_text or not self._full_text.strip():
+            return False
+
+        self._is_updating = True
+        self.hide_timer.stop()
+
+        self._apply_text_and_resize(self._full_text)
+
+        self.input_reply.clear()
+        self.input_reply.setEnabled(True)
+        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
+        self.btn_send.setEnabled(True)
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.input_reply.setFocus()
+
+        self.card.repaint()
+        self.label.repaint()
+        self.repaint()
+
+        self._is_updating = False
+
+        # 30 seconds duration while idle, paused whenever master types
+        self.hide_timer.start(30000)
+        return True
 
     def _send_user_reply(self):
         text = self.input_reply.text().strip()
@@ -256,60 +282,17 @@ class SpeechBubble(QWidget):
 
     def eventFilter(self, obj, event):
         if obj == self.input_reply:
+            if self._is_updating:
+                return super().eventFilter(obj, event)
             if event.type() == QEvent.Type.FocusIn:
                 # When user focuses input box, pause auto-hide timer
                 self.hide_timer.stop()
             elif event.type() == QEvent.Type.FocusOut:
-                # When user unfocuses and hasn't typed anything, resume a gentle 8s hide timer
-                if not self.input_reply.text().strip():
+                # When user unfocuses and hasn't typed anything, resume a gentle 10s hide timer
+                if self.isVisible() and not self.input_reply.text().strip():
                     self.hide_timer.stop()
-                    self.hide_timer.start(8000)
+                    self.hide_timer.start(10000)
         return super().eventFilter(obj, event)
-
-    def reopen_last(self) -> bool:
-        """Reopens the last critique bubble with full text and focused input box."""
-        if not self._full_text or not self._full_text.strip():
-            return False
-
-        self.type_timer.stop()
-        self.hide_timer.stop()
-
-        # Recalculate dimensions for the stored text
-        length = len(self._full_text)
-        if length <= 20:
-            target_width = 330
-        elif length <= 45:
-            target_width = 380
-        elif length <= 70:
-            target_width = 430
-        else:
-            target_width = 480
-
-        fm = self.label.fontMetrics()
-        available_text_w = max(240, target_width - 50)
-        text_rect = fm.boundingRect(0, 0, available_text_w, 2000, Qt.TextFlag.TextWordWrap, self._full_text)
-        needed_text_h = max(24, text_rect.height() + 8)
-        self.label.setMinimumHeight(needed_text_h)
-        target_height = max(140, 26 + 24 + 22 + 12 + 30 + needed_text_h + 8)
-        self.setFixedSize(target_width, target_height)
-
-        self._current_index = len(self._full_text)
-        self.label.setText(self._full_text)
-
-        self.input_reply.clear()
-        self.input_reply.setEnabled(True)
-        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
-        self.btn_send.setEnabled(True)
-
-        # 25 seconds duration while idle, and paused whenever focused/typing
-        self.hide_timer.start(25000)
-
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self.input_reply.setFocus()
-        self.update()
-        return True
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -321,18 +304,7 @@ class SpeechBubble(QWidget):
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
 
-    def _type_next_char(self):
-        if self._current_index < len(self._full_text):
-            self._current_index += 1
-            self.label.setText(self._full_text[:self._current_index])
-            self.update()
-        else:
-            self.type_timer.stop()
-            self.label.setText(self._full_text)
-            self.update()
-
     def hide_bubble(self):
-        self.type_timer.stop()
         self.hide_timer.stop()
         self.input_reply.clear()
         self.input_reply.clearFocus()
