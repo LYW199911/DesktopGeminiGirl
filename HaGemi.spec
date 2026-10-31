@@ -30,6 +30,7 @@ hiddenimports = [
     'config_manager',
     'log_manager',
     'app_paths',
+    'version',
     'brain.context_memory',
 ]
 

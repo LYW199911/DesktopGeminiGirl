@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont, QIcon, QPixmap, QTextCursor
 from config_manager import ConfigManager
 from log_manager import LogManager
 from app_paths import ASSETS_DIR
+from version import VERSION
 from .img_utils import remove_white_background
 
 PERSONA_PRESETS = {
@@ -55,7 +56,7 @@ class SettingsWindow(QMainWindow):
         self.config_mgr = ConfigManager()
         self.logger = LogManager()
 
-        self.setWindowTitle("哈Gemi · 控制台与设置中心")
+        self.setWindowTitle(f"哈Gemi · 控制台与设置中心 {VERSION}")
         self.setMinimumSize(820, 640)
         self.resize(860, 680)
 
@@ -506,7 +507,7 @@ class SettingsWindow(QMainWindow):
 
         # Toolbar
         tb = QHBoxLayout()
-        lbl = QLabel("实时感知流水线与 AI 锐评记录:")
+        lbl = QLabel(f"实时感知流水线与 AI 锐评记录 ({VERSION}):")
         lbl.setStyleSheet("font-weight: bold; color: #ff7aa6;")
         tb.addWidget(lbl)
         tb.addStretch()

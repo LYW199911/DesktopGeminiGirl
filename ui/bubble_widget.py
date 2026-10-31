@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QLineEdit, QApplication
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QEvent
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QPolygon
+from version import VERSION
 
 class SpeechBubble(QWidget):
     closed = pyqtSignal()
@@ -43,7 +44,7 @@ class SpeechBubble(QWidget):
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(2, 0, 0, 0)
 
-        self.title_label = QLabel("哈Gemi", self.card)
+        self.title_label = QLabel(f"哈Gemi {VERSION}", self.card)
         t_font = QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold)
         t_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         self.title_label.setFont(t_font)
@@ -83,6 +84,7 @@ class SpeechBubble(QWidget):
 
         # Content Label: Crisp Bold Text on White Background
         self.label = QLabel(self.card)
+        self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         lbl_font = QFont("Microsoft YaHei UI", 10, QFont.Weight.DemiBold)
@@ -189,6 +191,7 @@ class SpeechBubble(QWidget):
             # SWP_NOSIZE(0x0001) | SWP_NOMOVE(0x0002) | SWP_NOZORDER(0x0004) | SWP_NOACTIVATE(0x0010) | SWP_FRAMECHANGED(0x0020) | SWP_SHOWWINDOW(0x0040)
             flags = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020 | 0x0040
             ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, flags)
+            ctypes.windll.user32.RedrawWindow(hwnd, None, None, 0x0001 | 0x0100 | 0x0080)
             ctypes.windll.user32.UpdateWindow(hwnd)
         except Exception:
             pass
@@ -245,16 +248,13 @@ class SpeechBubble(QWidget):
         """Displays new critique text immediately, flushes DWM layered cache, and synchronizes with TTS audio."""
         self.prepare_text(text)
 
-        # If already visible, briefly hide to force Qt/DWM to recreate/clear stale layered surfaces
-        if self.isVisible():
-            self.hide()
-
         self.show()
         self.raise_()
 
-        # Synchronously repaint child and top-level layered buffers to flush to DWM
-        self.card.repaint()
-        self.label.repaint()
+        # Update and repaint all buffers
+        self.label.update()
+        self.card.update()
+        self.update()
         self.repaint()
         self._force_dwm_refresh()
         QApplication.processEvents()
@@ -273,16 +273,14 @@ class SpeechBubble(QWidget):
 
         self.prepare_text(self._full_text)
 
-        if self.isVisible():
-            self.hide()
-
         self.show()
         self.raise_()
         self.activateWindow()
         self.input_reply.setFocus()
 
-        self.card.repaint()
-        self.label.repaint()
+        self.label.update()
+        self.card.update()
+        self.update()
         self.repaint()
         self._force_dwm_refresh()
         QApplication.processEvents()
