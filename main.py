@@ -258,6 +258,7 @@ class DesktopPetController(QObject):
         if self.pet.isVisible():
             self.pet.hide()
             self.pet.bubble.hide()
+            self.pet.interaction_dialog.hide()
         else:
             self.pet.show()
 

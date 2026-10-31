@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import QWidget, QLabel, QMenu, QApplication
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
 from PyQt6.QtGui import QPixmap, QCursor, QAction
 from .bubble_widget import SpeechBubble
+from .interaction_dialog import InteractionDialog
 from config_manager import ConfigManager
 from app_paths import ASSETS_DIR
 
@@ -54,9 +55,13 @@ class DesktopPetWidget(QWidget):
         self.avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._load_avatar(avatar_path)
 
-        # Bubble
+        # Bubble (Passive Comic Speech Bubble with Typewriter effect)
         self.bubble = SpeechBubble()
-        self.bubble.user_replied.connect(self.user_replied.emit)
+        self.bubble.clicked.connect(self.reopen_last_bubble)
+
+        # Interaction Dialog (Interactive reply card)
+        self.interaction_dialog = InteractionDialog()
+        self.interaction_dialog.user_replied.connect(self.user_replied.emit)
 
         # Place initially at bottom-right corner of screen
         self._place_at_bottom_right()
@@ -146,7 +151,7 @@ class DesktopPetWidget(QWidget):
 
     def show_critique(self, text: str):
         self.raise_()
-        bw, bh = self.bubble.prepare_text(text)
+        bw, bh = self.bubble.calculate_size(text)
 
         # Position bubble nicely above-left of pet based on pre-measured size
         bx = self.x() - bw + 45
@@ -165,26 +170,14 @@ class DesktopPetWidget(QWidget):
         self.bubble.show_text(text)
 
     def reopen_last_bubble(self):
-        """Reopens the last critique bubble for interaction, or guides user if none exists."""
-        if not self.bubble._full_text or not self.bubble._full_text.strip():
+        """Reopens the last critique in the interaction dialog for chatting."""
+        last_text = self.bubble._full_text
+        if not last_text or not last_text.strip():
             self.show_critique("刚才还没有锐评记录喵~ 点击我或按 Ctrl+F9 呼叫锐评吧！")
             return
 
-        bw, bh = self.bubble.prepare_text(self.bubble._full_text)
-
-        bx = self.x() - bw + 45
-        by = self.y() - bh - 6
-
-        screen = self.screen() or QApplication.primaryScreen()
-        if screen:
-            geom = screen.availableGeometry()
-            if bx < geom.x() + 10:
-                bx = self.x() + self.width() - 30
-            if by < geom.y() + 10:
-                by = self.y() + self.height() + 10
-
-        self.bubble.move(bx, by)
-        self.bubble.reopen_last()
+        self.bubble.hide()
+        self.interaction_dialog.open_for_critique(last_text, self.pos())
 
     # Mouse drag & click & wheel events
     def wheelEvent(self, event):
@@ -211,6 +204,10 @@ class DesktopPetWidget(QWidget):
                 bw = self.bubble.width()
                 bh = self.bubble.height()
                 self.bubble.move(new_pos.x() - bw + 45, new_pos.y() - bh - 6)
+            if self.interaction_dialog.isVisible():
+                dw = self.interaction_dialog.width()
+                dh = self.interaction_dialog.height()
+                self.interaction_dialog.move(new_pos.x() - dw + 45, new_pos.y() - dh - 10)
             event.accept()
 
     def mouseDoubleClickEvent(self, event):
@@ -293,4 +290,5 @@ class DesktopPetWidget(QWidget):
 
     def closeEvent(self, event):
         self.bubble.close()
+        self.interaction_dialog.close()
         super().closeEvent(event)

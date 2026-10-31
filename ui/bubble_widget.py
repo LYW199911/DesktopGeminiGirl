@@ -1,45 +1,45 @@
-import ctypes
-from typing import Optional, Tuple
-from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QLineEdit, QApplication
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QEvent
+from typing import Optional
+from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QPolygon
 
 class SpeechBubble(QWidget):
     closed = pyqtSignal()
-    user_replied = pyqtSignal(str)
+    clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 
             Qt.WindowType.WindowStaysOnTopHint | 
-            Qt.WindowType.Tool
+            Qt.WindowType.ToolTip
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
         self._full_text = ""
-        self._is_updating = False
+        self._current_index = 0
 
         # Outer Layout
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 16)  # Extra bottom space for bubble tail
+        main_layout.setContentsMargins(10, 10, 10, 16)  # Extra bottom space for comic tail
 
-        # Inner Card (Puffy White Bubble)
+        # Inner Card (Puffy White Comic Bubble)
         self.card = QFrame(self)
         self.card.setObjectName("BubbleCard")
         self.card.setStyleSheet("""
             QFrame#BubbleCard {
                 background-color: #ffffff;
                 border: 2.5px solid #2d2645;
-                border-radius: 20px;
+                border-radius: 18px;
             }
         """)
 
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(15, 10, 15, 12)
+        card_layout.setContentsMargins(14, 10, 14, 12)
         card_layout.setSpacing(6)
 
-        # Header: Title + Close Button (×)
+        # Top bar: Character Name + Close Button
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(2, 0, 0, 0)
 
@@ -47,14 +47,13 @@ class SpeechBubble(QWidget):
         t_font = QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold)
         t_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         self.title_label.setFont(t_font)
-        self.title_label.setStyleSheet("color: #ff4e88; background-color: #ffffff; border: none;")
+        self.title_label.setStyleSheet("color: #ff4e88; background: transparent; border: none;")
         top_bar.addWidget(self.title_label)
 
         top_bar.addStretch()
 
-        # Cute Round Close Button
         self.close_btn = QPushButton("×", self.card)
-        self.close_btn.setFixedSize(22, 22)
+        self.close_btn.setFixedSize(20, 20)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.setToolTip("关闭气泡")
         self.close_btn.setStyleSheet("""
@@ -62,7 +61,7 @@ class SpeechBubble(QWidget):
                 background-color: #f2edf7;
                 color: #6d6682;
                 border: 1px solid #dcd5e8;
-                border-radius: 11px;
+                border-radius: 10px;
                 font-size: 13px;
                 font-weight: bold;
                 padding-bottom: 2px;
@@ -81,7 +80,7 @@ class SpeechBubble(QWidget):
 
         card_layout.addLayout(top_bar)
 
-        # Content Label: Crisp Bold Text on White Background
+        # Content Label: Crisp bold text
         self.label = QLabel(self.card)
         self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.label.setWordWrap(True)
@@ -92,7 +91,7 @@ class SpeechBubble(QWidget):
         self.label.setStyleSheet("""
             QLabel {
                 color: #1f1b2e;
-                background-color: #ffffff;
+                background: transparent;
                 border: none;
                 padding-top: 1px;
                 padding-bottom: 1px;
@@ -100,58 +99,11 @@ class SpeechBubble(QWidget):
         """)
         card_layout.addWidget(self.label)
 
-        # Interactive Reply Input Bar
-        self.reply_bar = QHBoxLayout()
-        self.reply_bar.setContentsMargins(0, 4, 0, 0)
-        self.reply_bar.setSpacing(6)
-
-        self.input_reply = QLineEdit(self.card)
-        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
-        self.input_reply.setStyleSheet("""
-            QLineEdit {
-                background-color: #f7f4fa;
-                border: 1.5px solid #dcd5e8;
-                border-radius: 12px;
-                padding: 4px 10px;
-                color: #2d2645;
-                font-size: 11px;
-                font-family: "Microsoft YaHei", sans-serif;
-            }
-            QLineEdit:focus {
-                background-color: #ffffff;
-                border: 1.5px solid #ff4e88;
-            }
-        """)
-        self.input_reply.returnPressed.connect(self._send_user_reply)
-        self.input_reply.textEdited.connect(self._on_user_typing)
-        self.input_reply.installEventFilter(self)
-        self.reply_bar.addWidget(self.input_reply)
-
-        self.btn_send = QPushButton("发送", self.card)
-        self.btn_send.setFixedSize(46, 26)
-        self.btn_send.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_send.setStyleSheet("""
-            QPushButton {
-                background-color: #ff4e88;
-                color: #ffffff;
-                border: none;
-                border-radius: 13px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #ff689a;
-            }
-            QPushButton:pressed {
-                background-color: #e03b73;
-            }
-        """)
-        self.btn_send.clicked.connect(self._send_user_reply)
-        self.reply_bar.addWidget(self.btn_send)
-
-        card_layout.addLayout(self.reply_bar)
-
         main_layout.addWidget(self.card)
+
+        # Typewriter timer ("慢慢")
+        self.type_timer = QTimer(self)
+        self.type_timer.timeout.connect(self._type_next_char)
 
         # Auto hide timer
         self.hide_timer = QTimer(self)
@@ -162,13 +114,7 @@ class SpeechBubble(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Clear background completely transparent to prevent dirty alpha accumulation on layered window
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-        painter.eraseRect(self.rect())
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-
         cr = self.card.geometry()
-        # Draw comic tail pointing toward bottom right
         tail_start_x = cr.right() - 40
         tail_tip_x = cr.right() - 20
         tail_tip_y = cr.bottom() + 12
@@ -187,138 +133,78 @@ class SpeechBubble(QWidget):
         painter.drawLine(tail_start_x, cr.bottom() - 1, tail_tip_x, tail_tip_y)
         painter.drawLine(tail_tip_x, tail_tip_y, tail_start_x + 18, cr.bottom() - 1)
 
-    def changeEvent(self, event):
-        if event.type() == QEvent.Type.ActivationChange:
-            if not self.isActiveWindow():
-                # When bubble loses OS window activation, resume auto-hide timer if user is not actively typing
-                if self.isVisible() and not self.input_reply.text().strip():
-                    self.hide_timer.stop()
-                    self.hide_timer.start(8000)
-        super().changeEvent(event)
-
-    def _apply_text_and_resize(self, text: str) -> Tuple[int, int]:
-        """Immediately sets text, measures height, and applies exact dimensions without height accumulation."""
-        self._full_text = text
+    def calculate_size(self, text: str) -> tuple[int, int]:
+        """Accurately calculates bubble dimensions without size accumulation."""
         length = len(text)
-        if length <= 25:
-            target_width = 340
-        elif length <= 55:
-            target_width = 400
-        elif length <= 85:
-            target_width = 460
+        if length <= 20:
+            target_width = 280
+        elif length <= 45:
+            target_width = 350
+        elif length <= 75:
+            target_width = 410
         else:
-            target_width = 520
+            target_width = 470
 
-        avail_w = target_width - 50
-        # Reset constraints on label before measuring so previous size never accumulates
-        self.label.setMinimumSize(0, 0)
-        self.label.setMaximumSize(16777215, 16777215)
-        self.label.setText(text)
-
-        # Precise font bounding rect for text word wrap
+        avail_w = target_width - 48
         fm = self.label.fontMetrics()
         rect = fm.boundingRect(0, 0, avail_w, 2000, Qt.TextFlag.TextWordWrap, text)
         lbl_h = max(22, rect.height() + 4)
-        self.label.setFixedWidth(avail_w)
-        self.label.setFixedHeight(lbl_h)
 
-        # Fixed vertical heights:
-        # card margins(22) + top_bar(22) + spacing(12) + reply_bar(26) + outer margins(26) = 108
-        target_height = lbl_h + 108
-        self.setFixedSize(target_width, target_height)
+        # Card content: top_bar(20) + spacing(6) + label(lbl_h) + card padding(22) = lbl_h + 48
+        # Outer margins: top 10 + bottom 16 = 26
+        # Total height: lbl_h + 48 + 26 = lbl_h + 74
+        target_height = lbl_h + 74
         return target_width, target_height
 
-    def prepare_text(self, text: str) -> Tuple[int, int]:
-        """Pre-computes text layout and bubble dimensions before geometry placement."""
-        self._is_updating = True
+    def show_text(self, text: str, duration_ms: Optional[int] = None):
+        self.type_timer.stop()
         self.hide_timer.stop()
 
-        w, h = self._apply_text_and_resize(text)
+        self._full_text = text
+        self._current_index = 0
 
-        # Reset reply input line
-        self.input_reply.clear()
-        self.input_reply.clearFocus()
-        self.input_reply.setEnabled(True)
-        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
-        self.btn_send.setEnabled(True)
+        target_width, target_height = self.calculate_size(text)
+        avail_w = target_width - 48
 
-        return w, h
+        # Lock exact dimensions before typewriter typing begins
+        self.label.setFixedWidth(avail_w)
+        self.setFixedSize(target_width, target_height)
 
-    def show_text(self, text: str, duration_ms: Optional[int] = None):
-        """Displays new critique text immediately and synchronizes with TTS audio."""
-        self.prepare_text(text)
+        # Clear text immediately so old text is NEVER shown on screen!
+        self.label.setText("")
 
         self.show()
         self.raise_()
 
-        # Update and repaint all buffers cleanly through Qt's backing store
-        self.label.update()
-        self.card.update()
-        self.update()
-        QApplication.processEvents()
-
-        self._is_updating = False
-
-        # Dynamic reading duration (minimum 10s for interaction)
+        # Dynamic reading duration
         if duration_ms is None:
-            duration_ms = max(10000, 8000 + len(text) * 80)
+            duration_ms = max(7000, 6000 + len(text) * 70)
+
+        # Start smooth typewriter effect ("慢慢")
+        self.type_timer.start(20)
         self.hide_timer.start(duration_ms)
 
-    def reopen_last(self) -> bool:
-        """Reopens the last critique bubble with full text and focused input box."""
-        if not self._full_text or not self._full_text.strip():
-            return False
+    def _type_next_char(self):
+        if self._current_index < len(self._full_text):
+            self._current_index += 1
+            self.label.setText(self._full_text[:self._current_index])
+            self.update()
+        else:
+            self.type_timer.stop()
+            self.label.setText(self._full_text)
+            self.update()
 
-        self.prepare_text(self._full_text)
-
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self.input_reply.setFocus()
-
-        self.label.update()
-        self.card.update()
-        self.update()
-        QApplication.processEvents()
-
-        self._is_updating = False
-
-        # 30 seconds duration while idle, paused whenever master types
-        self.hide_timer.start(30000)
-        return True
-
-    def _send_user_reply(self):
-        text = self.input_reply.text().strip()
-        if not text:
-            return
-        self.input_reply.clear()
-        self.input_reply.setPlaceholderText("哈Gemi正在思考回应中喵...")
-        self.input_reply.setEnabled(False)
-        self.btn_send.setEnabled(False)
-        self.hide_timer.stop()  # Do not auto-hide while waiting for reply!
-        self.user_replied.emit(text)
-
-    def _on_user_typing(self):
-        # Pause auto-hide so the bubble does not disappear while master is typing!
+    def hide_bubble(self):
+        self.type_timer.stop()
         self.hide_timer.stop()
-
-    def eventFilter(self, obj, event):
-        if obj == self.input_reply:
-            if self._is_updating:
-                return super().eventFilter(obj, event)
-            if event.type() == QEvent.Type.FocusIn:
-                # When user focuses input box, pause auto-hide timer
-                self.hide_timer.stop()
-            elif event.type() == QEvent.Type.FocusOut:
-                # When user unfocuses and hasn't typed anything, resume a gentle 10s hide timer
-                if self.isVisible() and not self.input_reply.text().strip():
-                    self.hide_timer.stop()
-                    self.hide_timer.start(10000)
-        return super().eventFilter(obj, event)
+        self.label.setText("")
+        self.hide()
+        self.closed.emit()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._press_pos = event.globalPosition().toPoint()
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -326,9 +212,10 @@ class SpeechBubble(QWidget):
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
 
-    def hide_bubble(self):
-        self.hide_timer.stop()
-        self.input_reply.clear()
-        self.input_reply.clearFocus()
-        self.hide()
-        self.closed.emit()
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and hasattr(self, '_press_pos'):
+            dist = (event.globalPosition().toPoint() - self._press_pos).manhattanLength()
+            if dist < 5:
+                # Clicked directly on the bubble -> emit clicked to open interaction dialog
+                self.clicked.emit()
+            event.accept()

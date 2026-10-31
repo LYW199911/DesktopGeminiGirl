@@ -32,6 +32,8 @@ hiddenimports = [
     'app_paths',
     'version',
     'brain.context_memory',
+    'ui.interaction_dialog',
+    'ui.bubble_widget',
 ]
 
 a = Analysis(
