@@ -134,26 +134,26 @@ class SpeechBubble(QWidget):
         painter.drawLine(tail_tip_x, tail_tip_y, tail_start_x + 18, cr.bottom() - 1)
 
     def calculate_size(self, text: str) -> tuple[int, int]:
-        """Accurately calculates bubble dimensions without size accumulation."""
+        """Accurately calculates bubble dimensions with safe DPI margins without size accumulation."""
         length = len(text)
-        if length <= 20:
-            target_width = 280
-        elif length <= 45:
-            target_width = 350
-        elif length <= 75:
-            target_width = 410
+        if length <= 18:
+            target_width = 300
+        elif length <= 42:
+            target_width = 380
+        elif length <= 70:
+            target_width = 440
         else:
-            target_width = 470
+            target_width = 500
 
-        avail_w = target_width - 48
+        avail_w = target_width - 56
+        # Use measure_w with safety inset so line breaks near boundary are conservatively counted
+        measure_w = max(180, avail_w - 12)
         fm = self.label.fontMetrics()
-        rect = fm.boundingRect(0, 0, avail_w, 2000, Qt.TextFlag.TextWordWrap, text)
-        lbl_h = max(22, rect.height() + 4)
+        rect = fm.boundingRect(0, 0, measure_w, 2000, Qt.TextFlag.TextWordWrap, text)
+        lbl_h = max(26, rect.height() + 12)
 
-        # Card content: top_bar(20) + spacing(6) + label(lbl_h) + card padding(22) = lbl_h + 48
-        # Outer margins: top 10 + bottom 16 = 26
-        # Total height: lbl_h + 48 + 26 = lbl_h + 74
-        target_height = lbl_h + 74
+        # Overhead: card padding(24) + top_bar(20) + spacing(6) + outer margins(28) + border(6) = 84
+        target_height = lbl_h + 86
         return target_width, target_height
 
     def show_text(self, text: str, duration_ms: Optional[int] = None):
@@ -164,7 +164,7 @@ class SpeechBubble(QWidget):
         self._current_index = 0
 
         target_width, target_height = self.calculate_size(text)
-        avail_w = target_width - 48
+        avail_w = target_width - 56
 
         # Lock exact dimensions before typewriter typing begins
         self.label.setFixedWidth(avail_w)

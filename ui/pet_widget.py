@@ -168,6 +168,7 @@ class DesktopPetWidget(QWidget):
 
         self.bubble.move(bx, by)
         self.bubble.show_text(text)
+        self.bubble.raise_()
 
     def reopen_last_bubble(self):
         """Reopens the last critique in the interaction dialog for chatting."""
@@ -204,6 +205,7 @@ class DesktopPetWidget(QWidget):
                 bw = self.bubble.width()
                 bh = self.bubble.height()
                 self.bubble.move(new_pos.x() - bw + 45, new_pos.y() - bh - 6)
+                self.bubble.raise_()
             if self.interaction_dialog.isVisible():
                 dw = self.interaction_dialog.width()
                 dh = self.interaction_dialog.height()
