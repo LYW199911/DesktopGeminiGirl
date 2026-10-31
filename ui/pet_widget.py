@@ -146,12 +146,9 @@ class DesktopPetWidget(QWidget):
 
     def show_critique(self, text: str):
         self.raise_()
-        self.bubble.show_text(text)
+        bw, bh = self.bubble.prepare_text(text)
 
         # Position bubble nicely above-left of pet based on pre-measured size
-        bw = self.bubble.width()
-        bh = self.bubble.height()
-
         bx = self.x() - bw + 45
         by = self.y() - bh - 6
 
@@ -165,17 +162,15 @@ class DesktopPetWidget(QWidget):
                 by = self.y() + self.height() + 10
 
         self.bubble.move(bx, by)
-        self.bubble.raise_()
-        self.bubble.repaint()
+        self.bubble.show_text(text)
 
     def reopen_last_bubble(self):
         """Reopens the last critique bubble for interaction, or guides user if none exists."""
-        if not self.bubble.reopen_last():
+        if not self.bubble._full_text or not self.bubble._full_text.strip():
             self.show_critique("刚才还没有锐评记录喵~ 点击我或按 Ctrl+F9 呼叫锐评吧！")
             return
 
-        bw = self.bubble.width()
-        bh = self.bubble.height()
+        bw, bh = self.bubble.prepare_text(self.bubble._full_text)
 
         bx = self.x() - bw + 45
         by = self.y() - bh - 6
@@ -189,10 +184,7 @@ class DesktopPetWidget(QWidget):
                 by = self.y() + self.height() + 10
 
         self.bubble.move(bx, by)
-        self.bubble.raise_()
-        self.bubble.activateWindow()
-        self.bubble.input_reply.setFocus()
-        self.bubble.repaint()
+        self.bubble.reopen_last()
 
     # Mouse drag & click & wheel events
     def wheelEvent(self, event):
