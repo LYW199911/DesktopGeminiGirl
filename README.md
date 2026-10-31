@@ -126,7 +126,8 @@ DesktopGeminiGirl/
 
 ---
 
-## 鸣谢
+## 鸣谢与版权致谢 (Credits)
 
-- 形象设定基于中文互联网二创与 Gemini 家族谱系灵感。
-- 感谢 PyQt6、Edge-TTS 与 Google Gemini 提供的强大生态支持。
+- **桌宠立绘与表情差分出处**：感谢 B 站 UP 主 **[@Xx勿忘xX](https://space.bilibili.com/25914748)** 制作并分享的 Gemini 表情包与立绘差分（动态专栏原帖：[⭐Gemini⭐分享几个Gemini的表情包和立绘无耳差分](https://www.bilibili.com/opus/1264669110489317411)）。
+- **原立绘人设原创**：原版 Gemini 娘人设与主立绘出处为画师大佬 **@zipzip**。
+- **开源生态**：感谢 PyQt6、Edge-TTS 与 Google Gemini 提供的强大生态支持。
