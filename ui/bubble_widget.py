@@ -1,6 +1,6 @@
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QLineEdit
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QEvent
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QPolygon
 
 class SpeechBubble(QWidget):
@@ -123,6 +123,7 @@ class SpeechBubble(QWidget):
         """)
         self.input_reply.returnPressed.connect(self._send_user_reply)
         self.input_reply.textEdited.connect(self._on_user_typing)
+        self.input_reply.installEventFilter(self)
         self.reply_bar.addWidget(self.input_reply)
 
         self.btn_send = QPushButton("发送", self.card)
@@ -247,6 +248,37 @@ class SpeechBubble(QWidget):
     def _on_user_typing(self):
         # Pause auto-hide so the bubble does not disappear while master is typing!
         self.hide_timer.stop()
+
+    def eventFilter(self, obj, event):
+        if obj == self.input_reply and event.type() == QEvent.Type.FocusIn:
+            # When user focuses input box, pause auto-hide timer immediately
+            self.hide_timer.stop()
+        return super().eventFilter(obj, event)
+
+    def reopen_last(self) -> bool:
+        """Reopens the last critique bubble with full text and focused input box."""
+        if not self._full_text or not self._full_text.strip():
+            return False
+
+        self.type_timer.stop()
+        self._current_index = len(self._full_text)
+        self.label.setText(self._full_text)
+        self.label.repaint()
+
+        self.input_reply.setEnabled(True)
+        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
+        self.btn_send.setEnabled(True)
+
+        # Generous duration (30s) while idle, and paused whenever focused/typing
+        self.hide_timer.stop()
+        self.hide_timer.start(30000)
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.input_reply.setFocus()
+        self.repaint()
+        return True
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

@@ -168,6 +168,32 @@ class DesktopPetWidget(QWidget):
         self.bubble.raise_()
         self.bubble.repaint()
 
+    def reopen_last_bubble(self):
+        """Reopens the last critique bubble for interaction, or guides user if none exists."""
+        if not self.bubble.reopen_last():
+            self.show_critique("刚才还没有锐评记录喵~ 点击我或按 Ctrl+F9 呼叫锐评吧！")
+            return
+
+        bw = self.bubble.width()
+        bh = self.bubble.height()
+
+        bx = self.x() - bw + 45
+        by = self.y() - bh - 6
+
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen:
+            geom = screen.availableGeometry()
+            if bx < geom.x() + 10:
+                bx = self.x() + self.width() - 30
+            if by < geom.y() + 10:
+                by = self.y() + self.height() + 10
+
+        self.bubble.move(bx, by)
+        self.bubble.raise_()
+        self.bubble.activateWindow()
+        self.bubble.input_reply.setFocus()
+        self.bubble.repaint()
+
     # Mouse drag & click & wheel events
     def wheelEvent(self, event):
         """Scroll mouse wheel over pet to cycle outfits instantly!"""
@@ -231,6 +257,10 @@ class DesktopPetWidget(QWidget):
         act_critique = QAction(f"呼叫{pet_name}锐评 (Ctrl+F9)", self)
         act_critique.triggered.connect(self.request_critique.emit)
         menu.addAction(act_critique)
+
+        act_reopen = QAction("打开刚才的评论框/吐槽互动", self)
+        act_reopen.triggered.connect(self.reopen_last_bubble)
+        menu.addAction(act_reopen)
 
         act_switch = QAction("切换下一个立绘 (滚轮/中键/Ctrl+F11)", self)
         act_switch.triggered.connect(self.cycle_next_outfit)

@@ -6,6 +6,7 @@ from PyQt6.QtCore import pyqtSignal
 class DesktopPetTray(QSystemTrayIcon):
     open_settings = pyqtSignal()
     trigger_critique = pyqtSignal()
+    reopen_bubble = pyqtSignal()
     cycle_outfit = pyqtSignal()
     toggle_pet_visibility = pyqtSignal()
     toggle_tts = pyqtSignal()
@@ -53,6 +54,10 @@ class DesktopPetTray(QSystemTrayIcon):
         act_critique = QAction("呼叫哈Gemi锐评 (Ctrl+F9)", self)
         act_critique.triggered.connect(self.trigger_critique.emit)
         menu.addAction(act_critique)
+
+        act_reopen = QAction("打开刚才的评论框/吐槽互动", self)
+        act_reopen.triggered.connect(self.reopen_bubble.emit)
+        menu.addAction(act_reopen)
 
         act_cycle = QAction("切换下一个立绘 (Ctrl+F11)", self)
         act_cycle.triggered.connect(self.cycle_outfit.emit)

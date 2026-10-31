@@ -68,6 +68,7 @@ class DesktopPetController(QObject):
         # Tray signals
         self.tray.open_settings.connect(self.show_settings)
         self.tray.trigger_critique.connect(self.trigger_manual_critique)
+        self.tray.reopen_bubble.connect(self.pet.reopen_last_bubble)
         self.tray.cycle_outfit.connect(self.pet.cycle_next_outfit)
         self.tray.toggle_pet_visibility.connect(self.toggle_visibility)
         self.tray.toggle_tts.connect(self.toggle_tts)
