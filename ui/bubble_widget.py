@@ -187,10 +187,15 @@ class SpeechBubble(QWidget):
         painter.drawLine(tail_tip_x, tail_tip_y, tail_start_x + 18, cr.bottom() - 1)
 
     def show_text(self, text: str, duration_ms: Optional[int] = None):
+        self.type_timer.stop()
+        self.hide_timer.stop()
+
         self._full_text = text
         self._current_index = 0
 
-        # Enable input line for chatter
+        # Reset and clear reply input line so old inputs don't linger
+        self.input_reply.clear()
+        self.input_reply.clearFocus()
         self.input_reply.setEnabled(True)
         self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
         self.btn_send.setEnabled(True)
@@ -219,8 +224,9 @@ class SpeechBubble(QWidget):
         # LOCK exact dimensions so window never collapses or flickers during typing
         self.setFixedSize(target_width, target_height)
 
-        # Reset text for typewriter effect
+        # Reset text for typewriter effect and force top-level window buffer update
         self.label.setText("")
+        self.update()
 
         self.show()
         self.raise_()
@@ -231,7 +237,6 @@ class SpeechBubble(QWidget):
 
         # Start typewriter effect
         self.type_timer.start(25)
-        self.hide_timer.stop()
         self.hide_timer.start(duration_ms)
 
     def _send_user_reply(self):
@@ -250,9 +255,15 @@ class SpeechBubble(QWidget):
         self.hide_timer.stop()
 
     def eventFilter(self, obj, event):
-        if obj == self.input_reply and event.type() == QEvent.Type.FocusIn:
-            # When user focuses input box, pause auto-hide timer immediately
-            self.hide_timer.stop()
+        if obj == self.input_reply:
+            if event.type() == QEvent.Type.FocusIn:
+                # When user focuses input box, pause auto-hide timer
+                self.hide_timer.stop()
+            elif event.type() == QEvent.Type.FocusOut:
+                # When user unfocuses and hasn't typed anything, resume a gentle 8s hide timer
+                if not self.input_reply.text().strip():
+                    self.hide_timer.stop()
+                    self.hide_timer.start(8000)
         return super().eventFilter(obj, event)
 
     def reopen_last(self) -> bool:
@@ -261,23 +272,43 @@ class SpeechBubble(QWidget):
             return False
 
         self.type_timer.stop()
+        self.hide_timer.stop()
+
+        # Recalculate dimensions for the stored text
+        length = len(self._full_text)
+        if length <= 20:
+            target_width = 330
+        elif length <= 45:
+            target_width = 380
+        elif length <= 70:
+            target_width = 430
+        else:
+            target_width = 480
+
+        fm = self.label.fontMetrics()
+        available_text_w = max(240, target_width - 50)
+        text_rect = fm.boundingRect(0, 0, available_text_w, 2000, Qt.TextFlag.TextWordWrap, self._full_text)
+        needed_text_h = max(24, text_rect.height() + 8)
+        self.label.setMinimumHeight(needed_text_h)
+        target_height = max(140, 26 + 24 + 22 + 12 + 30 + needed_text_h + 8)
+        self.setFixedSize(target_width, target_height)
+
         self._current_index = len(self._full_text)
         self.label.setText(self._full_text)
-        self.label.repaint()
 
+        self.input_reply.clear()
         self.input_reply.setEnabled(True)
         self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
         self.btn_send.setEnabled(True)
 
-        # Generous duration (30s) while idle, and paused whenever focused/typing
-        self.hide_timer.stop()
-        self.hide_timer.start(30000)
+        # 25 seconds duration while idle, and paused whenever focused/typing
+        self.hide_timer.start(25000)
 
         self.show()
         self.raise_()
         self.activateWindow()
         self.input_reply.setFocus()
-        self.repaint()
+        self.update()
         return True
 
     def mousePressEvent(self, event):
@@ -294,13 +325,16 @@ class SpeechBubble(QWidget):
         if self._current_index < len(self._full_text):
             self._current_index += 1
             self.label.setText(self._full_text[:self._current_index])
-            self.label.repaint()
+            self.update()
         else:
             self.type_timer.stop()
-            self.label.repaint()
+            self.label.setText(self._full_text)
+            self.update()
 
     def hide_bubble(self):
         self.type_timer.stop()
         self.hide_timer.stop()
+        self.input_reply.clear()
+        self.input_reply.clearFocus()
         self.hide()
         self.closed.emit()

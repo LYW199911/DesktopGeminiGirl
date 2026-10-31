@@ -166,7 +166,7 @@ class DesktopPetWidget(QWidget):
 
         self.bubble.move(bx, by)
         self.bubble.raise_()
-        self.bubble.repaint()
+        self.bubble.update()
 
     def reopen_last_bubble(self):
         """Reopens the last critique bubble for interaction, or guides user if none exists."""
@@ -192,7 +192,7 @@ class DesktopPetWidget(QWidget):
         self.bubble.raise_()
         self.bubble.activateWindow()
         self.bubble.input_reply.setFocus()
-        self.bubble.repaint()
+        self.bubble.update()
 
     # Mouse drag & click & wheel events
     def wheelEvent(self, event):
