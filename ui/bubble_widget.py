@@ -160,9 +160,13 @@ class SpeechBubble(QWidget):
         self.hide_timer.timeout.connect(self.hide_bubble)
 
     def paintEvent(self, event):
-        super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Clear background completely transparent to prevent dirty alpha accumulation on layered window
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        painter.eraseRect(self.rect())
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
         cr = self.card.geometry()
         # Draw comic tail pointing toward bottom right
@@ -184,17 +188,14 @@ class SpeechBubble(QWidget):
         painter.drawLine(tail_start_x, cr.bottom() - 1, tail_tip_x, tail_tip_y)
         painter.drawLine(tail_tip_x, tail_tip_y, tail_start_x + 18, cr.bottom() - 1)
 
-    def _force_dwm_refresh(self):
-        """Forces Windows DWM to invalidate its redirection surface cache and recomposite layered window immediately."""
-        try:
-            hwnd = int(self.winId())
-            # SWP_NOSIZE(0x0001) | SWP_NOMOVE(0x0002) | SWP_NOZORDER(0x0004) | SWP_NOACTIVATE(0x0010) | SWP_FRAMECHANGED(0x0020) | SWP_SHOWWINDOW(0x0040)
-            flags = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020 | 0x0040
-            ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, flags)
-            ctypes.windll.user32.RedrawWindow(hwnd, None, None, 0x0001 | 0x0100 | 0x0080)
-            ctypes.windll.user32.UpdateWindow(hwnd)
-        except Exception:
-            pass
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.ActivationChange:
+            if not self.isActiveWindow():
+                # When bubble loses OS window activation, resume auto-hide timer if user is not actively typing
+                if self.isVisible() and not self.input_reply.text().strip():
+                    self.hide_timer.stop()
+                    self.hide_timer.start(8000)
+        super().changeEvent(event)
 
     def _apply_text_and_resize(self, text: str) -> Tuple[int, int]:
         """Immediately sets text, measures height, and applies exact dimensions without height accumulation."""
@@ -245,18 +246,16 @@ class SpeechBubble(QWidget):
         return w, h
 
     def show_text(self, text: str, duration_ms: Optional[int] = None):
-        """Displays new critique text immediately, flushes DWM layered cache, and synchronizes with TTS audio."""
+        """Displays new critique text immediately and synchronizes with TTS audio."""
         self.prepare_text(text)
 
         self.show()
         self.raise_()
 
-        # Update and repaint all buffers
+        # Update and repaint all buffers cleanly through Qt's backing store
         self.label.update()
         self.card.update()
         self.update()
-        self.repaint()
-        self._force_dwm_refresh()
         QApplication.processEvents()
 
         self._is_updating = False
@@ -281,8 +280,6 @@ class SpeechBubble(QWidget):
         self.label.update()
         self.card.update()
         self.update()
-        self.repaint()
-        self._force_dwm_refresh()
         QApplication.processEvents()
 
         self._is_updating = False
