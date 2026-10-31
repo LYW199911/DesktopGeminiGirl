@@ -60,6 +60,7 @@ class DesktopPetController(QObject):
         # Pet signals
         self.pet.open_settings.connect(self.show_settings)
         self.pet.request_critique.connect(self.trigger_manual_critique)
+        self.pet.user_replied.connect(self.handle_user_reply)
         self.pet.toggle_tts.connect(self.toggle_tts)
         self.pet.toggle_auto.connect(self.toggle_auto)
         self.pet.quit_app.connect(self.quit)
@@ -148,6 +149,34 @@ class DesktopPetController(QObject):
         if self.rate_limiter.should_trigger_auto(scene, title):
             self.logger.scene(f"自动捕获场景: [{scene}] 窗口: {title} ({proc})")
             self._start_critique_task(scene, title, proc, rect=info.get("rect"))
+
+    def handle_user_reply(self, user_comment: str):
+        if self._is_analyzing:
+            return
+        info = get_foreground_window_info()
+        scene = info.get("scene", "general")
+        title = info.get("title", "")
+        proc = info.get("process", "")
+
+        self.logger.info(f"主人在气泡回复互动: \"{user_comment}\"")
+        self._start_user_interaction_task(scene, title, proc, user_comment, rect=info.get("rect"))
+
+    def _start_user_interaction_task(self, scene: str, title: str, proc: str, user_comment: str, rect=None):
+        self._is_analyzing = True
+        def worker():
+            try:
+                max_w = 1440 if scene == "video" else 1280
+                cap = capture_screen_jpeg(max_width=max_w, quality=80, crop_rect=rect)
+                image_b64 = cap[1] if cap else None
+
+                text = self.engine.generate_interactive_reply(scene, title, proc, user_comment, image_b64)
+                self.critique_ready.emit(text)
+            except Exception as e:
+                self.logger.error(f"互动回复任务出错: {e}")
+            finally:
+                self._is_analyzing = False
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def trigger_manual_critique(self):
         if self._is_analyzing:

@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon, QPixmap
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QTextCursor
 
 from config_manager import ConfigManager
 from log_manager import LogManager
@@ -507,6 +507,16 @@ class SettingsWindow(QMainWindow):
         tb.addWidget(lbl)
         tb.addStretch()
 
+        btn_open_file = QPushButton("打开日志文件")
+        btn_open_file.setObjectName("SecondaryBtn")
+        btn_open_file.clicked.connect(self._open_log_file)
+        tb.addWidget(btn_open_file)
+
+        btn_refresh = QPushButton("刷新日志")
+        btn_refresh.setObjectName("SecondaryBtn")
+        btn_refresh.clicked.connect(self._refresh_log_display)
+        tb.addWidget(btn_refresh)
+
         btn_clear = QPushButton("清空日志")
         btn_clear.setObjectName("SecondaryBtn")
         btn_clear.clicked.connect(self._clear_logs)
@@ -532,59 +542,63 @@ class SettingsWindow(QMainWindow):
     # Logic & Event Handlers
     # ==========================
     def _load_values(self):
-        cfg = self.config_mgr.config
+        self._is_loading = True
+        try:
+            cfg = self.config_mgr.config
 
-        # 1. General & API
-        prov = cfg.get("api_provider", "gemini")
-        idx = self.combo_provider.findData(prov)
-        if idx >= 0:
-            self.combo_provider.setCurrentIndex(idx)
-        else:
-            self.combo_provider.setCurrentIndex(0)
+            # 1. General & API
+            prov = cfg.get("api_provider", "gemini")
+            idx = self.combo_provider.findData(prov)
+            if idx >= 0:
+                self.combo_provider.setCurrentIndex(idx)
+            else:
+                self.combo_provider.setCurrentIndex(0)
 
-        self.input_api_url.setText(cfg.get("custom_api_url", "https://openrouter.ai/api/v1"))
-        self._on_provider_changed()
+            self.input_api_url.setText(cfg.get("custom_api_url", "https://openrouter.ai/api/v1"))
+            self._on_provider_changed()
 
-        self.input_key.setText(cfg.get("api_key", ""))
-        self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
-        self.chk_auto.setChecked(cfg.get("auto_mode", True))
-        self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
-        self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
+            self.input_key.setText(cfg.get("api_key", ""))
+            self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
+            self.chk_auto.setChecked(cfg.get("auto_mode", True))
+            self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
+            self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
 
-        self.chk_game.setChecked(cfg.get("comment_on_games", True))
-        self.chk_video.setChecked(cfg.get("comment_on_videos", True))
-        self.chk_work.setChecked(cfg.get("comment_on_work", True))
+            self.chk_game.setChecked(cfg.get("comment_on_games", True))
+            self.chk_video.setChecked(cfg.get("comment_on_videos", True))
+            self.chk_work.setChecked(cfg.get("comment_on_work", True))
 
-        self.chk_autostart.setChecked(self.config_mgr.is_autostart_enabled())
+            self.chk_autostart.setChecked(self.config_mgr.is_autostart_enabled())
 
-        self.chk_tts.setChecked(cfg.get("enable_tts", True))
-        current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
-        for i in range(self.combo_voice.count()):
-            if self.combo_voice.itemData(i) == current_voice:
-                self.combo_voice.setCurrentIndex(i)
-                break
+            self.chk_tts.setChecked(cfg.get("enable_tts", True))
+            current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
+            for i in range(self.combo_voice.count()):
+                if self.combo_voice.itemData(i) == current_voice:
+                    self.combo_voice.setCurrentIndex(i)
+                    break
 
-        self.slider_height.setValue(int(cfg.get("target_height", 250)))
-        self.lbl_height_val.setText(f"{self.slider_height.value()} px")
+            self.slider_height.setValue(int(cfg.get("target_height", 250)))
+            self.lbl_height_val.setText(f"{self.slider_height.value()} px")
 
-        # 2. Avatar Outfits
-        outfits = cfg.get("outfits", {})
-        for emo, card in self.outfit_cards.items():
-            fn = outfits.get(emo, card["default_fn"])
-            card["filename"] = fn
-            self._refresh_avatar_preview(emo, fn)
+            # 2. Avatar Outfits
+            outfits = cfg.get("outfits", {})
+            for emo, card in self.outfit_cards.items():
+                fn = outfits.get(emo, card["default_fn"])
+                card["filename"] = fn
+                self._refresh_avatar_preview(emo, fn)
 
-        # 3. Persona
-        self.input_name.setText(cfg.get("pet_name", "哈Gemi"))
-        c_list = cfg.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
-        self.input_catchphrases.setText(", ".join(c_list))
+            # 3. Persona
+            self.input_name.setText(cfg.get("pet_name", "哈Gemi"))
+            c_list = cfg.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
+            self.input_catchphrases.setText(", ".join(c_list))
 
-        p_style = cfg.get("persona_style", "元气毒舌 (默认)")
-        if p_style in PERSONA_PRESETS:
-            self.combo_persona.setCurrentText(p_style)
-        self._on_persona_preset_changed(self.combo_persona.currentText())
+            p_style = cfg.get("persona_style", "元气毒舌 (默认)")
+            if p_style in PERSONA_PRESETS:
+                self.combo_persona.setCurrentText(p_style)
+            self._update_persona_desc(self.combo_persona.currentText())
 
-        self.txt_custom_prompt.setPlainText(cfg.get("custom_system_prompt", ""))
+            self.txt_custom_prompt.setPlainText(cfg.get("custom_system_prompt", ""))
+        finally:
+            self._is_loading = False
 
     def _refresh_avatar_preview(self, emo_key: str, filename: str):
         full_path = os.path.join(ASSETS_DIR, filename)
@@ -669,7 +683,19 @@ class SettingsWindow(QMainWindow):
             else:
                 self.combo_model.setCurrentIndex(0)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh_log_display()
+
     def _on_persona_preset_changed(self, text: str):
+        self._update_persona_desc(text)
+        if getattr(self, "_is_loading", False):
+            return
+        if text in PERSONA_PRESETS:
+            p = PERSONA_PRESETS[text]
+            self.input_catchphrases.setText(p["catchphrases"])
+
+    def _update_persona_desc(self, text: str):
         if text in PERSONA_PRESETS:
             p = PERSONA_PRESETS[text]
             self.lbl_persona_desc.setText(f"说明: {p['desc']}")
@@ -707,7 +733,24 @@ class SettingsWindow(QMainWindow):
         name = self.input_name.text().strip() or "哈Gemi"
         speaker.speak_async(f"主人你好呀！我是你的桌面专属猫娘{name}喵~")
 
+    def _open_log_file(self):
+        log_f = getattr(self.logger, "log_file", "")
+        if log_f and os.path.exists(log_f):
+            try:
+                os.startfile(log_f)
+            except Exception as e:
+                QMessageBox.warning(self, "错误", f"无法打开日志文件: {e}")
+        else:
+            QMessageBox.information(self, "提示", "日志文件尚未生成或暂无记录。")
+
+    def _refresh_log_display(self):
+        self.log_browser.clear()
+        for item in self.logger.get_all_logs():
+            self._append_log(item["time"], item["level"], item["message"])
+        self.log_browser.moveCursor(QTextCursor.MoveOperation.End)
+
     def _clear_logs(self):
+        self.logger.clear()
         self.log_browser.clear()
 
     def _append_log(self, t_str: str, level: str, text: str):
@@ -715,11 +758,13 @@ class SettingsWindow(QMainWindow):
             "INFO": "#8ce99a",
             "CRITIQUE": "#ff79c6",
             "SCENE": "#8be9fd",
+            "MEMORY": "#f1fa8c",
             "ERROR": "#ff5555"
         }
         color = color_map.get(level, "#ffffff")
         html = f"<span style='color:#6272a4;'>[{t_str}]</span> <span style='color:{color}; font-weight:bold;'>[{level}]</span> <span style='color:#f8f8f2;'>{text}</span>"
         self.log_browser.append(html)
+        self.log_browser.moveCursor(QTextCursor.MoveOperation.End)
 
     def save_and_apply(self):
         # Gather all values

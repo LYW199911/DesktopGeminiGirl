@@ -18,8 +18,8 @@ temp_*
 *.tmp
 
 # Test scripts & temp renders
-text_crop.png
-test_bubble_*.png
+*.png
+!assets/*.png
 
 # Environments
 .venv/

@@ -1,10 +1,11 @@
 from typing import Optional
-from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame
+from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QLineEdit
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QPolygon
 
 class SpeechBubble(QWidget):
     closed = pyqtSignal()
+    user_replied = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,8 +44,10 @@ class SpeechBubble(QWidget):
         top_bar.setContentsMargins(2, 0, 0, 0)
 
         self.title_label = QLabel("哈Gemi", self.card)
-        self.title_label.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
-        self.title_label.setStyleSheet("color: #ff4e88; background: transparent; border: none;")
+        t_font = QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold)
+        t_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
+        self.title_label.setFont(t_font)
+        self.title_label.setStyleSheet("color: #ff4e88; background-color: #ffffff; border: none;")
         top_bar.addWidget(self.title_label)
 
         top_bar.addStretch()
@@ -82,17 +85,69 @@ class SpeechBubble(QWidget):
         self.label = QLabel(self.card)
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.label.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
+        lbl_font = QFont("Microsoft YaHei UI", 10, QFont.Weight.DemiBold)
+        lbl_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
+        self.label.setFont(lbl_font)
         self.label.setStyleSheet("""
             QLabel {
                 color: #1f1b2e;
-                background: transparent;
+                background-color: #ffffff;
                 border: none;
-                padding-top: 2px;
-                padding-bottom: 2px;
+                padding-top: 1px;
+                padding-bottom: 1px;
             }
         """)
         card_layout.addWidget(self.label)
+
+        # Interactive Reply Input Bar
+        self.reply_bar = QHBoxLayout()
+        self.reply_bar.setContentsMargins(0, 4, 0, 0)
+        self.reply_bar.setSpacing(6)
+
+        self.input_reply = QLineEdit(self.card)
+        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
+        self.input_reply.setStyleSheet("""
+            QLineEdit {
+                background-color: #f7f4fa;
+                border: 1.5px solid #dcd5e8;
+                border-radius: 12px;
+                padding: 4px 10px;
+                color: #2d2645;
+                font-size: 11px;
+                font-family: "Microsoft YaHei", sans-serif;
+            }
+            QLineEdit:focus {
+                background-color: #ffffff;
+                border: 1.5px solid #ff4e88;
+            }
+        """)
+        self.input_reply.returnPressed.connect(self._send_user_reply)
+        self.input_reply.textEdited.connect(self._on_user_typing)
+        self.reply_bar.addWidget(self.input_reply)
+
+        self.btn_send = QPushButton("发送", self.card)
+        self.btn_send.setFixedSize(46, 26)
+        self.btn_send.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_send.setStyleSheet("""
+            QPushButton {
+                background-color: #ff4e88;
+                color: #ffffff;
+                border: none;
+                border-radius: 13px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ff689a;
+            }
+            QPushButton:pressed {
+                background-color: #e03b73;
+            }
+        """)
+        self.btn_send.clicked.connect(self._send_user_reply)
+        self.reply_bar.addWidget(self.btn_send)
+
+        card_layout.addLayout(self.reply_bar)
 
         main_layout.addWidget(self.card)
 
@@ -134,31 +189,33 @@ class SpeechBubble(QWidget):
         self._full_text = text
         self._current_index = 0
 
-        # Dynamic resizing based on text character count
+        # Enable input line for chatter
+        self.input_reply.setEnabled(True)
+        self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
+        self.btn_send.setEnabled(True)
+
+        # Dynamic resizing based on text character count (accommodating input row)
         length = len(text)
         if length <= 20:
-            target_width = 260
+            target_width = 330
         elif length <= 45:
-            target_width = 340
+            target_width = 380
         elif length <= 70:
-            target_width = 400
+            target_width = 430
         else:
-            target_width = 460
+            target_width = 480
 
-        # Reset size constraints before calculating needed dimensions
-        self.setMinimumSize(0, 0)
-        self.setMaximumSize(16777215, 16777215)
+        # Calculate exact text bounding rect using font metrics to prevent any vertical squishing/clipping
+        fm = self.label.fontMetrics()
+        available_text_w = max(240, target_width - 50)
+        text_rect = fm.boundingRect(0, 0, available_text_w, 2000, Qt.TextFlag.TextWordWrap, text)
+        needed_text_h = max(24, text_rect.height() + 8)
+        self.label.setMinimumHeight(needed_text_h)
 
-        # Pre-measure exact height with full text populated
-        self.label.setText(text)
-        self.card.layout().activate()
-        self.layout().activate()
-        target_height = self.layout().heightForWidth(target_width)
-        if target_height <= 0:
-            target_height = self.sizeHint().height()
-        target_height += 8  # Extra breathing room cushion so text never clips
+        # Full bubble height: outer margins(26) + card margins(24) + top_bar(22) + spacing(12) + reply_bar(30) + needed_text_h + tail cushion(8)
+        target_height = max(140, 26 + 24 + 22 + 12 + 30 + needed_text_h + 8)
 
-        # LOCK exact target dimensions so the window will never collapse during typing
+        # LOCK exact dimensions so window never collapses or flickers during typing
         self.setFixedSize(target_width, target_height)
 
         # Reset text for typewriter effect
@@ -167,15 +224,29 @@ class SpeechBubble(QWidget):
         self.show()
         self.raise_()
 
-        # Dynamic duration: longer text gets more reading time
+        # Dynamic duration: longer text gets more reading time (minimum 10s for interaction)
         if duration_ms is None:
-            # 8s base + 80ms per character
-            duration_ms = max(8000, 7000 + length * 80)
+            duration_ms = max(10000, 8000 + length * 80)
 
         # Start typewriter effect
-        self.type_timer.start(28)
+        self.type_timer.start(25)
         self.hide_timer.stop()
         self.hide_timer.start(duration_ms)
+
+    def _send_user_reply(self):
+        text = self.input_reply.text().strip()
+        if not text:
+            return
+        self.input_reply.clear()
+        self.input_reply.setPlaceholderText("哈Gemi正在思考回应中喵...")
+        self.input_reply.setEnabled(False)
+        self.btn_send.setEnabled(False)
+        self.hide_timer.stop()  # Do not auto-hide while waiting for reply!
+        self.user_replied.emit(text)
+
+    def _on_user_typing(self):
+        # Pause auto-hide so the bubble does not disappear while master is typing!
+        self.hide_timer.stop()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -191,10 +262,10 @@ class SpeechBubble(QWidget):
         if self._current_index < len(self._full_text):
             self._current_index += 1
             self.label.setText(self._full_text[:self._current_index])
-            self.update()  # Force repainting layered window buffer
+            self.label.repaint()
         else:
             self.type_timer.stop()
-            self.update()
+            self.label.repaint()
 
     def hide_bubble(self):
         self.type_timer.stop()

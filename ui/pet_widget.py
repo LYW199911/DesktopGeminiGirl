@@ -23,6 +23,7 @@ OUTFIT_LABELS = {
 class DesktopPetWidget(QWidget):
     open_settings = pyqtSignal()
     request_critique = pyqtSignal()
+    user_replied = pyqtSignal(str)
     toggle_tts = pyqtSignal()
     toggle_auto = pyqtSignal()
     quit_app = pyqtSignal()
@@ -55,6 +56,7 @@ class DesktopPetWidget(QWidget):
 
         # Bubble
         self.bubble = SpeechBubble()
+        self.bubble.user_replied.connect(self.user_replied.emit)
 
         # Place initially at bottom-right corner of screen
         self._place_at_bottom_right()
@@ -164,6 +166,7 @@ class DesktopPetWidget(QWidget):
 
         self.bubble.move(bx, by)
         self.bubble.raise_()
+        self.bubble.repaint()
 
     # Mouse drag & click & wheel events
     def wheelEvent(self, event):

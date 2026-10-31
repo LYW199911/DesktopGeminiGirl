@@ -6,7 +6,7 @@ BASE_DIR = os.path.abspath(SPECPATH)
 
 datas = [
     (os.path.join(BASE_DIR, 'assets'), 'assets'),
-    (os.path.join(BASE_DIR, 'config.json'), '.'),
+    (os.path.join(BASE_DIR, 'config.example.json'), '.'),
 ]
 
 hiddenimports = [
@@ -30,6 +30,7 @@ hiddenimports = [
     'config_manager',
     'log_manager',
     'app_paths',
+    'brain.context_memory',
 ]
 
 a = Analysis(

@@ -4,11 +4,15 @@ import base64
 import requests
 from typing import Optional, Tuple
 from config_manager import ConfigManager
-from .prompts import get_system_prompt, build_scene_prompt
+from log_manager import LogManager
+from .prompts import get_system_prompt, build_scene_prompt, build_interactive_prompt
+from .context_memory import ContextMemoryManager
 
 class GeminiCritiqueEngine:
     def __init__(self):
         self.config_mgr = ConfigManager()
+        self.context_memory = ContextMemoryManager()
+        self.logger = LogManager()
 
     @property
     def provider(self) -> str:
@@ -94,14 +98,73 @@ class GeminiCritiqueEngine:
 
         catchphrases = self.config_mgr.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
         custom_prompt = self.config_mgr.get("custom_system_prompt", "")
+        persona_style = self.config_mgr.get("persona_style", "元气毒舌 (默认)")
 
-        sys_prompt = get_system_prompt(pet_name, catchphrases, custom_prompt)
-        user_prompt = build_scene_prompt(scene, window_title, process_name, pet_name)
+        # Retrieve rolling context memory (minimal tokens: ~20-35 tokens)
+        history_context = self.context_memory.get_recent_context(scene, window_title, max_items=2)
+        if history_context:
+            self.logger.memory(f"提取到 {len(history_context)} 条前情记忆承接上下文: \"{history_context[-1][:20]}...\"")
+
+        sys_prompt = get_system_prompt(pet_name, catchphrases, custom_prompt, persona_style=persona_style)
+        user_prompt = build_scene_prompt(
+            scene, window_title, process_name,
+            pet_name=pet_name,
+            persona_style=persona_style,
+            history_context=history_context
+        )
 
         if self.provider == "openai_compatible":
-            return self._call_openai_compatible(sys_prompt, user_prompt, image_b64, pet_name)
+            text = self._call_openai_compatible(sys_prompt, user_prompt, image_b64, pet_name)
         else:
-            return self._call_gemini_native(sys_prompt, user_prompt, image_b64, pet_name)
+            text = self._call_gemini_native(sys_prompt, user_prompt, image_b64, pet_name)
+
+        # Record into memory so subsequent critiques on this video/window will follow up and not repeat
+        if text and not text.startswith("[relieved] 喵呜！"):
+            self.context_memory.record_critique(scene, window_title, text, pet_name=pet_name)
+
+        return text
+
+    def generate_interactive_reply(
+        self,
+        scene: str,
+        window_title: str,
+        process_name: str,
+        user_comment: str,
+        image_b64: Optional[str] = None
+    ) -> str:
+        pet_name = self.config_mgr.get("pet_name", "哈Gemi")
+        if not self.api_key:
+            return f"[curious] 喵？主人还没有在控制台配置 API Key 喵！快去填上密钥~"
+
+        catchphrases = self.config_mgr.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
+        custom_prompt = self.config_mgr.get("custom_system_prompt", "")
+        persona_style = self.config_mgr.get("persona_style", "元气毒舌 (默认)")
+
+        # Record user's comment into memory FIRST
+        self.context_memory.record_user_comment(scene, window_title, user_comment)
+
+        # Retrieve rolling context memory including user's comment
+        history_context = self.context_memory.get_recent_context(scene, window_title, max_items=3)
+        self.logger.memory(f"主人在气泡吐槽: \"{user_comment}\" (上下文记忆 {len(history_context)} 条)")
+
+        sys_prompt = get_system_prompt(pet_name, catchphrases, custom_prompt, persona_style=persona_style)
+        user_prompt = build_interactive_prompt(
+            scene, window_title, process_name,
+            user_comment=user_comment,
+            pet_name=pet_name,
+            persona_style=persona_style,
+            history_context=history_context
+        )
+
+        if self.provider == "openai_compatible":
+            text = self._call_openai_compatible(sys_prompt, user_prompt, image_b64, pet_name)
+        else:
+            text = self._call_gemini_native(sys_prompt, user_prompt, image_b64, pet_name)
+
+        if text and not text.startswith("[relieved] 喵呜！"):
+            self.context_memory.record_critique(scene, window_title, text, pet_name=pet_name)
+
+        return text
 
     def _call_gemini_native(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
         base_url = "https://generativelanguage.googleapis.com"
