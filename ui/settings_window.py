@@ -215,6 +215,10 @@ class SettingsWindow(QMainWindow):
         self.btn_manual_test.clicked.connect(self.request_manual_critique.emit)
         bottom_bar.addWidget(self.btn_manual_test)
 
+        lbl_ver = QLabel(f"Dashboard · {VERSION}", self)
+        lbl_ver.setStyleSheet("color: #7d7594; font-size: 11px; font-weight: bold; padding-left: 8px;")
+        bottom_bar.addWidget(lbl_ver)
+
         bottom_bar.addStretch()
 
         self.btn_save = QPushButton("保存并立即生效", self)

@@ -97,11 +97,11 @@ class DesktopPetController(QObject):
         pet_name = self.config_mgr.get("pet_name", "哈Gemi")
         mem_count = len(self.engine.context_memory.history)
         if mem_count > 0:
-            greet_msg = f"{pet_name} {VERSION} 已就位喵~ 已加载 {mem_count} 条前情记忆，随时按 Ctrl+F9 呼叫锐评吧！"
-            self.logger.info(f"{pet_name} {VERSION} 启动就位！(已加载 {mem_count} 条前情记忆) 双击托盘图标或右键桌宠可打开设置中心。")
+            greet_msg = f"{pet_name}已就位喵~ 已加载 {mem_count} 条前情记忆，随时按 Ctrl+F9 呼叫锐评吧！"
+            self.logger.info(f"{pet_name} 启动就位！(版本: {VERSION}, 已加载 {mem_count} 条前情记忆) 双击托盘图标或右键桌宠可打开设置中心。")
         else:
-            greet_msg = f"{pet_name} {VERSION} 已就位！随时按 Ctrl+F9 接受本喵的锐评吧！"
-            self.logger.info(f"{pet_name} {VERSION} 启动就位！双击托盘图标或右键桌宠可打开设置中心。")
+            greet_msg = f"{pet_name}已就位！随时按 Ctrl+F9 接受本喵的锐评吧！"
+            self.logger.info(f"{pet_name} 启动就位！(版本: {VERSION}) 双击托盘图标或右键桌宠可打开设置中心。")
         QTimer.singleShot(1000, lambda: self.critique_ready.emit(greet_msg))
 
     def show_settings(self):
@@ -126,8 +126,8 @@ class DesktopPetController(QObject):
         self.pet.update_size(new_height)
 
         pet_name = cfg.get("pet_name", "哈Gemi")
-        self.pet.bubble.title_label.setText(f"{pet_name} {VERSION}")
-        self.tray.setToolTip(f"Gemini 赛博猫娘 · {pet_name} ({VERSION})\n双击打开控制台与设置中心")
+        self.pet.bubble.title_label.setText(pet_name)
+        self.tray.setToolTip(f"Gemini 赛博猫娘 · {pet_name}\n双击打开控制台与设置中心")
 
         self.logger.info(f"设置已重新加载，当前桌宠: {pet_name}，冷却: {self.rate_limiter.cooldown_seconds}s")
 

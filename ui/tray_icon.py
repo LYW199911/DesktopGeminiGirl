@@ -2,7 +2,6 @@ import os
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import pyqtSignal
-from version import VERSION
 
 class DesktopPetTray(QSystemTrayIcon):
     open_settings = pyqtSignal()
@@ -20,7 +19,7 @@ class DesktopPetTray(QSystemTrayIcon):
         else:
             self.setIcon(QIcon.fromTheme("applications-games"))
 
-        self.setToolTip(f"Gemini 赛博猫娘 · 哈Gemi ({VERSION})\n双击打开控制台与设置中心")
+        self.setToolTip("Gemini 赛博猫娘 · 哈Gemi\n双击打开控制台与设置中心")
 
         # Double-click handler
         self.activated.connect(self._on_activated)
@@ -46,13 +45,13 @@ class DesktopPetTray(QSystemTrayIcon):
             }
         """)
 
-        header_title = QAction(f"✨ 哈Gemi 赛博桌宠 ({VERSION})", self)
+        header_title = QAction("✨ 哈Gemi 赛博桌宠", self)
         header_title.setEnabled(False)
         menu.addAction(header_title)
 
         menu.addSeparator()
 
-        act_settings = QAction(f"控制台与设置中心 ({VERSION})", self)
+        act_settings = QAction("控制台与设置中心", self)
         act_settings.triggered.connect(self.open_settings.emit)
         menu.addAction(act_settings)
 

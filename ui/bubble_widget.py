@@ -3,7 +3,6 @@ from typing import Optional, Tuple
 from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QLineEdit, QApplication
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QEvent
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QPolygon
-from version import VERSION
 
 class SpeechBubble(QWidget):
     closed = pyqtSignal()
@@ -44,7 +43,7 @@ class SpeechBubble(QWidget):
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(2, 0, 0, 0)
 
-        self.title_label = QLabel(f"哈Gemi {VERSION}", self.card)
+        self.title_label = QLabel("哈Gemi", self.card)
         t_font = QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold)
         t_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         self.title_label.setFont(t_font)
