@@ -17,7 +17,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, QTimer, Qt
 from PyQt6.QtGui import QGuiApplication
 
 from config_manager import ConfigManager
-from log_manager import LogManager
+from log_manager import get_log_manager
 from perception.window_tracker import get_foreground_window_info
 from perception.screen_capture import capture_screen_jpeg
 from perception.hotkey_listener import GlobalHotkeyManager
@@ -33,6 +33,8 @@ from version import VERSION
 
 class DesktopPetController(QObject):
     critique_ready = pyqtSignal(str)
+    voice_toggle_requested = pyqtSignal()
+    voice_result_ready = pyqtSignal(bool, str)
 
     def __init__(self, pet_widget: DesktopPetWidget, tray_icon: DesktopPetTray, settings_win: SettingsWindow):
         super().__init__()
@@ -41,7 +43,7 @@ class DesktopPetController(QObject):
         self.settings_win = settings_win
 
         self.config_mgr = ConfigManager()
-        self.logger = LogManager()
+        self.logger = get_log_manager()
 
         # Engines
         self.engine = GeminiCritiqueEngine()
@@ -55,9 +57,16 @@ class DesktopPetController(QObject):
 
         self.auto_mode = self.config_mgr.get("auto_mode", True)
         self._is_analyzing = False
+        self._voice_stream = None
+        self._voice_chunks = []
+        self._voice_recording = False
+        self._voice_transcribing = False
+        self._voice_context = None
 
         # Connect signals
         self.critique_ready.connect(self._on_critique_ready)
+        self.voice_toggle_requested.connect(self._toggle_voice_input)
+        self.voice_result_ready.connect(self._on_voice_result)
 
         # Pet signals
         self.pet.open_settings.connect(self.show_settings)
@@ -84,8 +93,12 @@ class DesktopPetController(QObject):
         self.hotkeys = GlobalHotkeyManager(
             on_trigger_critique=self.trigger_manual_critique,
             on_toggle_mute=self.toggle_tts,
-            on_switch_outfit=self.pet.cycle_next_outfit
+            on_switch_outfit=self.pet.cycle_next_outfit,
+            on_toggle_voice_input=self.voice_toggle_requested.emit
         )
+        self.voice_timeout_timer = QTimer(self)
+        self.voice_timeout_timer.setSingleShot(True)
+        self.voice_timeout_timer.timeout.connect(self._finish_voice_recording)
         self.hotkeys.start()
 
         # Active Window Monitor Timer (runs every 2.5s)
@@ -132,7 +145,7 @@ class DesktopPetController(QObject):
         self.logger.info(f"设置已重新加载，当前桌宠: {pet_name}，冷却: {self.rate_limiter.cooldown_seconds}s")
 
     def _check_desktop_state(self):
-        if not self.auto_mode or self._is_analyzing:
+        if not self.auto_mode or self._is_analyzing or self._voice_recording or self._voice_transcribing:
             return
 
         info = get_foreground_window_info()
@@ -159,16 +172,119 @@ class DesktopPetController(QObject):
             self.logger.scene(f"自动捕获场景: [{scene}] 窗口: {title} ({proc})")
             self._start_critique_task(scene, title, proc, rect=info.get("rect"))
 
-    def handle_user_reply(self, user_comment: str):
+    def handle_user_reply(self, user_comment: str, window_info=None):
         if self._is_analyzing:
             return
-        info = get_foreground_window_info()
+        info = window_info or get_foreground_window_info()
         scene = info.get("scene", "general")
         title = info.get("title", "")
         proc = info.get("process", "")
 
         self.logger.info(f"主人在气泡回复互动: \"{user_comment}\"")
         self._start_user_interaction_task(scene, title, proc, user_comment, rect=info.get("rect"))
+
+    def _show_voice_status(self, message: str):
+        self.pet.show()
+        self.pet.show_critique(message)
+
+    def _toggle_voice_input(self):
+        if self._voice_recording:
+            self._finish_voice_recording()
+            return
+        if self._voice_transcribing:
+            self._show_voice_status("喵呜，正在识别刚才的语音，请稍等一下~")
+            return
+        if self._is_analyzing:
+            self._show_voice_status("我正在回复上一条消息，等一下再语音输入吧~")
+            return
+        if not self.config_mgr.get("tencent_secret_id", "").strip() or not self.config_mgr.get("tencent_secret_key", "").strip():
+            self._show_voice_status("请先在设置中心填写腾讯云 SecretId 和 SecretKey，再按 Ctrl+F1 录音喵~")
+            self.show_settings()
+            return
+
+        try:
+            import sounddevice as sd
+
+            self._voice_context = get_foreground_window_info()
+            if self._voice_context.get("is_self", False):
+                self._voice_context["scene"] = "general"
+                self._voice_context["rect"] = None
+            self._voice_chunks = []
+            self._voice_recording = True
+
+            def collect_audio(indata, frames, time_info, status):
+                self._voice_chunks.append(indata.copy().tobytes())
+
+            self._voice_stream = sd.InputStream(
+                samplerate=16000,
+                channels=1,
+                dtype="int16",
+                callback=collect_audio
+            )
+            self._voice_stream.start()
+            self.voice_timeout_timer.start(55000)
+            self._show_voice_status("🎙 正在录音… 再按 Ctrl+F1 结束并识别（最长 55 秒）")
+            self.logger.info("语音输入开始录音。")
+        except Exception as exc:
+            self._voice_recording = False
+            if self._voice_stream is not None:
+                try:
+                    self._voice_stream.close()
+                except Exception:
+                    pass
+                self._voice_stream = None
+            self._show_voice_status(f"无法启动麦克风录音：{exc}")
+            self.logger.error(f"无法启动麦克风录音: {exc}")
+
+    def _finish_voice_recording(self):
+        if not self._voice_recording:
+            return
+        self.voice_timeout_timer.stop()
+        self._voice_recording = False
+
+        stream = self._voice_stream
+        self._voice_stream = None
+        try:
+            if stream is not None:
+                stream.stop()
+                stream.close()
+        except Exception as exc:
+            self.logger.error(f"停止麦克风录音时出错: {exc}")
+
+        pcm_data = b"".join(self._voice_chunks)
+        self._voice_chunks = []
+        if not pcm_data:
+            self._show_voice_status("没有录到语音，请检查麦克风后重试喵~")
+            return
+
+        self._voice_transcribing = True
+        self._show_voice_status("录音结束，正在连接腾讯云识别…")
+        secret_id = self.config_mgr.get("tencent_secret_id", "").strip()
+        secret_key = self.config_mgr.get("tencent_secret_key", "").strip()
+
+        def recognize():
+            try:
+                from perception.tencent_asr import transcribe_pcm
+                text = transcribe_pcm(pcm_data, secret_id, secret_key)
+                self.voice_result_ready.emit(True, text)
+            except Exception as exc:
+                self.voice_result_ready.emit(False, str(exc))
+
+        threading.Thread(target=recognize, daemon=True).start()
+
+    def _on_voice_result(self, success: bool, text: str):
+        self._voice_transcribing = False
+        if not success:
+            self._voice_context = None
+            self._show_voice_status(f"语音识别失败：{text}")
+            self.logger.error(f"语音识别失败: {text}")
+            return
+
+        self.logger.info(f"腾讯云语音识别结果: {text}")
+        self._show_voice_status(f"听到啦：{text}")
+        context = self._voice_context
+        self._voice_context = None
+        self.handle_user_reply(text, context)
 
     def _start_user_interaction_task(self, scene: str, title: str, proc: str, user_comment: str, rect=None):
         self._is_analyzing = True
@@ -264,6 +380,16 @@ class DesktopPetController(QObject):
 
     def quit(self):
         self.logger.info("退出程序")
+        if getattr(self, "voice_timeout_timer", None):
+            self.voice_timeout_timer.stop()
+        if self._voice_stream is not None:
+            try:
+                self._voice_stream.stop()
+                self._voice_stream.close()
+            except Exception:
+                pass
+            self._voice_stream = None
+        self._voice_recording = False
         if hasattr(self, 'monitor_timer') and self.monitor_timer.isActive():
             self.monitor_timer.stop()
         self.hotkeys.stop()

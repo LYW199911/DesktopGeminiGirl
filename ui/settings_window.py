@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QTextCursor
 
 from config_manager import ConfigManager
-from log_manager import LogManager
+from log_manager import get_log_manager
 from app_paths import ASSETS_DIR
 from version import VERSION
 from .img_utils import remove_white_background
@@ -54,7 +54,7 @@ class SettingsWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.config_mgr = ConfigManager()
-        self.logger = LogManager()
+        self.logger = get_log_manager()
 
         self.setWindowTitle(f"哈Gemi · 控制台与设置中心 {VERSION}")
         self.setMinimumSize(820, 640)
@@ -290,6 +290,25 @@ class SettingsWindow(QMainWindow):
         box_api_l.addWidget(self.combo_model, 3, 1, 1, 3)
 
         layout.addWidget(box_api)
+
+        # Tencent Cloud speech recognition credentials
+        box_asr = QGroupBox("语音输入 (腾讯云一句话识别)")
+        box_asr_l = QGridLayout(box_asr)
+        box_asr_l.setSpacing(10)
+        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 0, 0)
+        self.input_tencent_secret_id = QLineEdit()
+        self.input_tencent_secret_id.setPlaceholderText("腾讯云 API 密钥管理中的 SecretId")
+        box_asr_l.addWidget(self.input_tencent_secret_id, 0, 1, 1, 3)
+        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 1, 0)
+        self.input_tencent_secret_key = QLineEdit()
+        self.input_tencent_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_tencent_secret_key.setPlaceholderText("腾讯云 API 密钥管理中的 SecretKey")
+        box_asr_l.addWidget(self.input_tencent_secret_key, 1, 1, 1, 3)
+        asr_hint = QLabel("按 Ctrl+F1 开始/结束录音；停止后自动识别并发送。录音最长 55 秒，音频仅暂存在内存并发送给腾讯云，不写入本地文件。")
+        asr_hint.setWordWrap(True)
+        asr_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
+        box_asr_l.addWidget(asr_hint, 2, 0, 1, 4)
+        layout.addWidget(box_asr)
 
         # 2. Perception & Autostart Box
         box_sense = QGroupBox("自动感知与场景设置")
@@ -592,6 +611,8 @@ class SettingsWindow(QMainWindow):
 
             self.input_key.setText(cfg.get("api_key", ""))
             self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
+            self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
+            self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
             self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
             self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
@@ -872,6 +893,8 @@ class SettingsWindow(QMainWindow):
         enable_tts = self.chk_tts.isChecked()
         tts_voice = self.combo_voice.currentData()
         target_height = self.slider_height.value()
+        tencent_secret_id = self.input_tencent_secret_id.text().strip()
+        tencent_secret_key = self.input_tencent_secret_key.text().strip()
 
         pet_name = self.input_name.text().strip() or "哈Gemi"
         c_raw = self.input_catchphrases.text().replace("，", ",")
@@ -890,6 +913,8 @@ class SettingsWindow(QMainWindow):
             "custom_api_url": custom_api_url,
             "api_key": key,
             "model": model,
+            "tencent_secret_id": tencent_secret_id,
+            "tencent_secret_key": tencent_secret_key,
             "auto_mode": auto_mode,
             "cooldown_seconds": cooldown,
             "comment_on_games": comment_games,

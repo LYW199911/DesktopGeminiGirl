@@ -15,6 +15,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "api_key": "",
     "custom_api_url": "https://openrouter.ai/api/v1",
     "model": "gemini-3.8-flash",
+    "tencent_secret_id": "",
+    "tencent_secret_key": "",
     "temperature": 0.88,
     "cooldown_seconds": 45,
     "enable_tts": True,
