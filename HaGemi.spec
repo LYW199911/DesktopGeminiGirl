@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
+from PyInstaller.utils.hooks import collect_all
 
 BASE_DIR = os.path.abspath(SPECPATH)
 
@@ -8,11 +9,15 @@ datas = [
     (os.path.join(BASE_DIR, 'assets'), 'assets'),
     (os.path.join(BASE_DIR, 'config.example.json'), '.'),
 ]
+sounddevice_datas, sounddevice_binaries, sounddevice_hiddenimports = collect_all('sounddevice')
+datas += sounddevice_datas
 
 hiddenimports = [
     'pynput.keyboard._win32',
     'pynput.mouse._win32',
     'pynput',
+    'sounddevice',
+    *sounddevice_hiddenimports,
     'edge_tts',
     'mss',
     'PIL',
@@ -39,7 +44,7 @@ hiddenimports = [
 a = Analysis(
     [os.path.join(BASE_DIR, 'main.py')],
     pathex=[BASE_DIR],
-    binaries=[],
+    binaries=sounddevice_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
