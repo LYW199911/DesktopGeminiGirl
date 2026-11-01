@@ -7,11 +7,13 @@ class GlobalHotkeyManager:
         self,
         on_trigger_critique: Callable[[], None],
         on_toggle_mute: Optional[Callable[[], None]] = None,
-        on_switch_outfit: Optional[Callable[[], None]] = None
+        on_switch_outfit: Optional[Callable[[], None]] = None,
+        on_toggle_voice_input: Optional[Callable[[], None]] = None
     ):
         self.on_trigger_critique = on_trigger_critique
         self.on_toggle_mute = on_toggle_mute
         self.on_switch_outfit = on_switch_outfit
+        self.on_toggle_voice_input = on_toggle_voice_input
         self._listener: Optional[keyboard.GlobalHotKeys] = None
 
     def start(self):
@@ -22,11 +24,13 @@ class GlobalHotkeyManager:
             hotkeys['<ctrl>+<f10>'] = self._handle_mute
         if self.on_switch_outfit:
             hotkeys['<ctrl>+<f11>'] = self._handle_switch_outfit
+        if self.on_toggle_voice_input:
+            hotkeys['<ctrl>+<f1>'] = self._handle_voice_input
 
         self._listener = keyboard.GlobalHotKeys(hotkeys)
         self._listener.daemon = True
         self._listener.start()
-        print("[Hotkey] Registered <ctrl>+<f9> (Critique), <ctrl>+<f10> (Mute), <ctrl>+<f11> (Switch Outfit)")
+        print("[Hotkey] Registered <ctrl>+<f1> (Voice Input), <ctrl>+<f9> (Critique), <ctrl>+<f10> (Mute), <ctrl>+<f11> (Switch Outfit)")
 
     def stop(self):
         if self._listener:
@@ -46,3 +50,8 @@ class GlobalHotkeyManager:
         print("[Hotkey] <ctrl>+<f11> pressed -> Switch Outfit triggered!")
         if self.on_switch_outfit:
             self.on_switch_outfit()
+
+    def _handle_voice_input(self):
+        print("[Hotkey] <ctrl>+<f1> pressed -> Toggle Voice Input")
+        if self.on_toggle_voice_input:
+            self.on_toggle_voice_input()
