@@ -686,7 +686,7 @@ class SettingsWindow(QMainWindow):
             self.lbl_api_url.setVisible(False)
             self.input_api_url.setVisible(False)
             self.lbl_key.setText("Gemini API Key:")
-            self.input_key.setPlaceholderText("填入 AIzaSy... 开头的 Gemini 官方 API 密钥")
+            self.input_key.setPlaceholderText("填入 Gemini 官方 API 密钥 (AIzaSy... 或 AQ... 开头)")
             items = [
                 "gemini-3.8-flash",
                 "gemini-2.5-flash",
@@ -752,7 +752,19 @@ class SettingsWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请先填入 API Key！")
             return
 
-        from brain.gemini_client import GeminiCritiqueEngine
+        from brain.gemini_client import GeminiCritiqueEngine, is_valid_gemini_key
+        # 若为 Gemini 官方端点且格式不符合常见特征 (兼容 AIzaSy 与 AQ 前缀)，做温和提示但允许用户继续
+        if prov == "gemini" and not is_valid_gemini_key(key):
+            reply = QMessageBox.question(
+                self,
+                "提示",
+                "检测到输入的 API Key 格式可能不属于标准的 Gemini 官方 Key (通常为 AIzaSy... 或 AQ... 开头)。\n是否仍要继续测试？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
         engine = GeminiCritiqueEngine()
         ok, msg = engine.test_connection(key=key, model=model, provider=prov, custom_url=custom_url)
         if ok:

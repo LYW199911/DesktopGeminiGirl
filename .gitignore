@@ -21,6 +21,8 @@ temp_*
 # Test scripts & temp renders
 *.png
 !assets/*.png
+assets/avatar_chibi_shock.png
+video_cover*
 
 # Environments
 .venv/

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import base64
 import requests
@@ -8,6 +9,12 @@ from log_manager import LogManager
 from .prompts import get_system_prompt, build_scene_prompt, build_interactive_prompt
 from .context_memory import ContextMemoryManager
 
+def is_valid_gemini_key(key: str) -> bool:
+    """校验 Google Gemini API Key 是否符合规范 (同时兼容传统 AIzaSy 与新版 AQ 开头)"""
+    if not key:
+        return False
+    return bool(re.match(r"^(AIzaSy|AQ)[A-Za-z0-9_-]{20,}$", key.strip()))
+
 class GeminiCritiqueEngine:
     def __init__(self):
         self.config_mgr = ConfigManager()
@@ -16,7 +23,20 @@ class GeminiCritiqueEngine:
 
     @property
     def provider(self) -> str:
-        return self.config_mgr.get("api_provider", "gemini").strip()
+        # 1. 优先以显式配置的 api_provider 为准
+        prov = self.config_mgr.get("api_provider", "").strip().lower()
+        if prov in ("gemini", "google"):
+            return "gemini"
+        if prov in ("openai_compatible", "openai", "openrouter"):
+            return "openai_compatible"
+
+        # 2. 兜底识别：若未显式指定，根据 Key 前缀自动判断 (AQ / AIzaSy 均归入 gemini)
+        key = self.api_key
+        if key.startswith("AIzaSy") or key.startswith("AQ"):
+            return "gemini"
+        if key.startswith("sk-"):
+            return "openai_compatible"
+        return "gemini"
 
     @property
     def api_key(self) -> str:
@@ -38,13 +58,22 @@ class GeminiCritiqueEngine:
         custom_url: Optional[str] = None
     ) -> Tuple[bool, str]:
         """Test API Key validity for either Gemini or OpenAI/OpenRouter provider."""
-        test_key = key if key is not None else self.api_key
-        test_model = model or self.model
-        test_prov = provider or self.provider
-        test_url = custom_url or self.custom_url
+        test_key = key.strip() if key is not None else self.api_key
+        test_model = model.strip() if model else self.model
+        test_prov = provider.strip().lower() if provider else self.provider
+        test_url = custom_url.strip() if custom_url else self.custom_url
 
         if not test_key:
             return False, "API Key 不能为空！"
+
+        # 若未指定有效 provider，根据 Key 前缀自动路由 (明确归入 Google Gemini 或 OpenAI 兼容)
+        if test_prov not in ("gemini", "openai_compatible"):
+            if test_key.startswith("AIzaSy") or test_key.startswith("AQ"):
+                test_prov = "gemini"
+            elif test_key.startswith("sk-"):
+                test_prov = "openai_compatible"
+            else:
+                test_prov = "gemini"
 
         if test_prov == "openai_compatible":
             base = test_url.rstrip("/")
@@ -69,15 +98,19 @@ class GeminiCritiqueEngine:
             except Exception as e:
                 return False, f"网络连接超时或错误: {e}"
         else:
-            # Google Gemini native
+            # Google Gemini native (双通道传递：URL 参数 ?key= 与 HTTP 请求头 x-goog-api-key)
             base = "https://generativelanguage.googleapis.com"
             url = f"{base}/v1beta/models/{test_model}:generateContent?key={test_key}"
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": test_key
+            }
             payload = {
                 "contents": [{"parts": [{"text": "ping"}]}],
                 "generationConfig": {"maxOutputTokens": 10, "thinkingConfig": {"thinkingBudget": 0}}
             }
             try:
-                r = requests.post(url, json=payload, timeout=10)
+                r = requests.post(url, json=payload, headers=headers, timeout=10)
                 if r.status_code == 200:
                     return True, f"连接成功！Google Gemini ({test_model}) 算力响应正常。"
                 else:
@@ -200,7 +233,10 @@ class GeminiCritiqueEngine:
                 }
             }
         }
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key
+        }
 
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=12)
