@@ -9,8 +9,19 @@ LOG_FILE = os.path.join(BASE_DIR, "desktop_pet.log")
 class LogManager(QObject):
     log_added = pyqtSignal(str, str, str)  # timestamp, level, text
 
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
+        if getattr(self, "_initialized", False):
+            return
         super().__init__()
+        self._initialized = True
         self.logs: List[Dict[str, str]] = []
         self.max_logs = 500
         self.log_file = LOG_FILE
@@ -65,12 +76,6 @@ class LogManager(QObject):
         self.log("ERROR", msg)
 
 
-_log_manager = None
-
-
 def get_log_manager() -> LogManager:
     """Return the one shared Qt logger without reinitializing a QObject."""
-    global _log_manager
-    if _log_manager is None:
-        _log_manager = LogManager()
-    return _log_manager
+    return LogManager()

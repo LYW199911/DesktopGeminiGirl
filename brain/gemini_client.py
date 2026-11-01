@@ -5,7 +5,7 @@ import base64
 import requests
 from typing import Optional, Tuple
 from config_manager import ConfigManager
-from log_manager import LogManager
+from log_manager import get_log_manager
 from .prompts import get_system_prompt, build_scene_prompt, build_interactive_prompt
 from .context_memory import ContextMemoryManager
 
@@ -19,7 +19,7 @@ class GeminiCritiqueEngine:
     def __init__(self):
         self.config_mgr = ConfigManager()
         self.context_memory = ContextMemoryManager()
-        self.logger = LogManager()
+        self.logger = get_log_manager()
 
     @property
     def provider(self) -> str:
