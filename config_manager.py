@@ -11,9 +11,12 @@ APP_NAME = "GeminiDesktopPet_HaGemi"
 CYBER_WHALE_CONFIG = os.path.expanduser(r"C:\Users\linyu\.gemini\cyber-whale\ai_config.json")
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "api_provider": "gemini",  # "gemini" or "openai_compatible"
+    "api_provider": "gemini",  # "gemini", "vertex", "antigravity", or "openai_compatible"
     "api_key": "",
     "custom_api_url": "https://openrouter.ai/api/v1",
+    "vertex_project_id": "",
+    "vertex_location": "global",
+    "vertex_credentials_file": "",
     "model": "gemini-3.8-flash",
     "tencent_secret_id": "",
     "tencent_secret_key": "",

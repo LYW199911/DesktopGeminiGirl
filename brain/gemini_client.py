@@ -1,9 +1,16 @@
 import os
 import re
 import json
+import time
 import base64
-import requests
-from typing import Optional, Tuple
+import shutil
+import tempfile
+import subprocess
+try:
+    import requests
+except ImportError:
+    requests = None
+from typing import Optional, Tuple, Dict, Any
 from config_manager import ConfigManager
 from log_manager import get_log_manager
 from .prompts import get_system_prompt, build_scene_prompt, build_interactive_prompt
@@ -15,22 +22,342 @@ def is_valid_gemini_key(key: str) -> bool:
         return False
     return bool(re.match(r"^(AIzaSy|AQ)[A-Za-z0-9_-]{20,}$", key.strip()))
 
+class AntigravityEngineHelper:
+    """Google Antigravity SDK & agy CLI 调度器 (直接消耗用户的 Antigravity 会员订阅算力)"""
+    def __init__(self, logger=None):
+        self.logger = logger
+        self._agy_bin = self._find_agy_binary()
+
+    def _find_agy_binary(self) -> Optional[str]:
+        # 1. 检查环境变量 PATH
+        found = shutil.which("agy.exe") or shutil.which("agy")
+        if found and os.path.exists(found):
+            return found
+        # 2. 检查常见 Windows / macOS 用户目录
+        home_agy = os.path.expanduser("~/.gemini/bin/agy.exe")
+        if os.path.exists(home_agy):
+            return home_agy
+        local_agy = os.path.expanduser("~/AppData/Local/Programs/Antigravity/bin/agy.exe")
+        if os.path.exists(local_agy):
+            return local_agy
+        return None
+
+    def is_available(self) -> bool:
+        try:
+            import google.antigravity
+            return True
+        except ImportError:
+            pass
+        return self._agy_bin is not None and os.path.exists(self._agy_bin)
+
+    def test_connection(self, model: str = "gemini-3.8-flash-high") -> Tuple[bool, str]:
+        if not self.is_available():
+            return False, "未检测到 Antigravity 运行环境 (未找到 agy 命令行或 google-antigravity SDK)。"
+        try:
+            text = self.chat(
+                sys_prompt="You are a helpful assistant.",
+                user_prompt="Say 'ping' in one word.",
+                image_b64=None,
+                model=model,
+                timeout=25
+            )
+            if text:
+                return True, f"连接成功！Google Antigravity 订阅算力通道 ({model}) 响应正常，已使用您的本地会员订阅配额！"
+            return False, "Antigravity 服务未返回内容。"
+        except Exception as e:
+            return False, f"Antigravity 连接失败: {e}"
+
+    def chat(
+        self,
+        sys_prompt: str,
+        user_prompt: str,
+        image_b64: Optional[str] = None,
+        model: str = "gemini-3.8-flash-high",
+        timeout: int = 35
+    ) -> str:
+        # 1. 优先尝试使用官方 google-antigravity Python SDK
+        try:
+            import asyncio
+            from google.antigravity import Agent, LocalAgentConfig, types
+            return self._call_sdk(sys_prompt, user_prompt, image_b64, model)
+        except ImportError:
+            pass
+
+        # 2. 降级使用 Antigravity 原生 CLI (agy) 进行系统级桥接
+        if self._agy_bin and os.path.exists(self._agy_bin):
+            return self._call_cli(sys_prompt, user_prompt, image_b64, model, timeout=timeout)
+
+        raise RuntimeError("未检测到已安装的 Antigravity (agy) 命令行或 google-antigravity SDK。")
+
+    def _call_sdk(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], model: str) -> str:
+        import asyncio
+        from google.antigravity import Agent, LocalAgentConfig, types
+
+        temp_img_path = None
+        if image_b64:
+            temp_dir = tempfile.gettempdir()
+            temp_img_path = os.path.join(temp_dir, f"hagemi_screen_{int(time.time() * 1000)}.jpg")
+            with open(temp_img_path, "wb") as f:
+                f.write(base64.b64decode(image_b64))
+
+        async def _run():
+            config = LocalAgentConfig(
+                system_instructions=sys_prompt,
+                model=model
+            )
+            async with Agent(config) as agent:
+                prompt_items = [user_prompt]
+                if temp_img_path and os.path.exists(temp_img_path):
+                    prompt_items.append(types.Image.from_file(temp_img_path))
+                resp = await agent.chat(prompt_items)
+                return await resp.text()
+
+        try:
+            return asyncio.run(_run())
+        finally:
+            if temp_img_path and os.path.exists(temp_img_path):
+                try:
+                    os.remove(temp_img_path)
+                except Exception:
+                    pass
+
+    def _call_cli(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], model: str, timeout: int = 35) -> str:
+        temp_img_path = None
+        try:
+            full_prompt = f"【系统人设与角色准则】\n{sys_prompt}\n\n【用户与桌面场景】\n{user_prompt}"
+            if image_b64:
+                temp_dir = tempfile.gettempdir()
+                temp_img_path = os.path.join(temp_dir, f"hagemi_screen_{int(time.time() * 1000)}.jpg")
+                with open(temp_img_path, "wb") as f:
+                    f.write(base64.b64decode(image_b64))
+                full_prompt += f"\n\n当前桌面截屏画面：@{temp_img_path}"
+
+            cmd = [
+                self._agy_bin,
+                "--print", full_prompt,
+                "--model", model,
+                "--disable-slash-commands",
+                "--dangerously-skip-permissions"
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8")
+            if r.returncode == 0:
+                out = r.stdout.strip()
+                # 过滤可能夹带的 cli 内部日志或 thinking 标签
+                lines = [l for l in out.splitlines() if not l.startswith("[") and not l.startswith("Thinking:")]
+                clean_text = "\n".join(lines).strip() or out
+                return clean_text
+            else:
+                err_msg = r.stderr.strip() or r.stdout.strip()
+                raise RuntimeError(f"agy 执行失败 (code {r.returncode}): {err_msg[:160]}")
+        finally:
+            if temp_img_path and os.path.exists(temp_img_path):
+                try:
+                    os.remove(temp_img_path)
+                except Exception:
+                    pass
+
+
+class VertexAuthHelper:
+    """Google Cloud Vertex AI 认证与 Token 调度器
+    支持:
+    1. Service Account JSON 密钥文件 (优先 google-auth，降级使用 cryptography 自签名 JWT)
+    2. 本地 gcloud CLI 或 ADC 自动凭据 (免配置文件)
+    3. 直接输入 Bearer Access Token (ya29...) 或 Vertex Express Mode API Key (AQ... / AIzaSy...)
+    """
+    def __init__(self, logger=None):
+        self.logger = logger
+        self._cached_token = None
+        self._token_expiry = 0
+        self._cached_project = None
+
+    def get_auth(
+        self,
+        creds_file: Optional[str] = None,
+        project_id: Optional[str] = None,
+        api_key: Optional[str] = None
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        now = time.time()
+        raw_key = (api_key or "").strip()
+
+        # 1. 直接提供 OAuth2 Bearer Access Token (通常以 ya29. 开头)
+        if raw_key.startswith("ya29."):
+            proj = project_id or self._detect_gcloud_project()
+            return raw_key, proj, None, None
+
+        # 2. 传入了 Vertex Express Mode 或 GCP API Key (通常以 AIzaSy 或 AQ 开头)
+        if raw_key and (raw_key.startswith("AIzaSy") or raw_key.startswith("AQ")):
+            proj = project_id or self._detect_gcloud_project()
+            return None, proj, raw_key, None
+
+        # 3. 检查已缓存且尚未过期的 Bearer Token (留出 60s 缓冲)
+        if self._cached_token and now < (self._token_expiry - 60):
+            proj = project_id or self._cached_project or self._detect_gcloud_project()
+            return self._cached_token, proj, None, None
+
+        # 4. 指定了服务账号 JSON 密钥文件
+        target_file = creds_file.strip() if creds_file else ""
+        if target_file and os.path.exists(target_file):
+            token, sa_proj, err = self._token_from_service_account(target_file)
+            if token:
+                self._cached_token = token
+                self._token_expiry = now + 3500
+                self._cached_project = sa_proj or project_id
+                resolved_proj = project_id or sa_proj or self._cached_project
+                return token, resolved_proj, None, None
+            if err:
+                return None, project_id, None, err
+
+        # 5. 尝试通过 google-auth 读取本地 ADC (Application Default Credentials)
+        token, adc_proj = self._token_from_adc()
+        if token:
+            self._cached_token = token
+            self._token_expiry = now + 3500
+            self._cached_project = adc_proj or project_id
+            return token, (project_id or adc_proj), None, None
+
+        # 6. 尝试通过 本地 gcloud CLI 自动获取 Access Token
+        token, gc_proj = self._token_from_gcloud()
+        if token:
+            self._cached_token = token
+            self._token_expiry = now + 3000
+            self._cached_project = gc_proj or project_id
+            return token, (project_id or gc_proj), None, None
+
+        return None, project_id, None, (
+            "未找到有效的 Vertex AI 凭据。请在控制台指定 Service Account JSON 密钥文件、"
+            "在终端通过 'gcloud auth login' 登录，或填入 API Key。"
+        )
+
+    def _token_from_service_account(self, creds_file: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        try:
+            with open(creds_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            sa_proj = data.get("project_id")
+
+            # 优先尝试 google.oauth2.service_account 官方库
+            try:
+                from google.oauth2 import service_account
+                import google.auth.transport.requests
+                creds = service_account.Credentials.from_service_account_info(
+                    data,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                creds.refresh(google.auth.transport.requests.Request())
+                return creds.token, sa_proj or getattr(creds, "project_id", None), None
+            except ImportError:
+                pass
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"google-auth 解析服务账号失败，尝试内置签名降级: {e}")
+
+            # 降级：利用 cryptography 库自签名 JWT 并向 Google OAuth2 端点兑换 Access Token
+            try:
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.asymmetric import padding
+                from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+                client_email = data.get("client_email")
+                private_key_pem = data.get("private_key", "").encode("utf-8")
+                token_uri = data.get("token_uri", "https://oauth2.googleapis.com/token")
+
+                if not client_email or not private_key_pem:
+                    return None, sa_proj, "服务账号 JSON 格式不完整 (缺少 client_email 或 private_key)。"
+
+                now = int(time.time())
+                header = {"alg": "RS256", "typ": "JWT"}
+                payload = {
+                    "iss": client_email,
+                    "scope": "https://www.googleapis.com/auth/cloud-platform",
+                    "aud": token_uri,
+                    "exp": now + 3600,
+                    "iat": now
+                }
+
+                def b64url(b: bytes) -> str:
+                    return base64.urlsafe_b64encode(b).decode("utf-8").rstrip("=")
+
+                sig_input = f"{b64url(json.dumps(header).encode('utf-8'))}.{b64url(json.dumps(payload).encode('utf-8'))}".encode("utf-8")
+                pkey = load_pem_private_key(private_key_pem, password=None)
+                signature = pkey.sign(sig_input, padding.PKCS1v15(), hashes.SHA256())
+                signed_jwt = f"{sig_input.decode('utf-8')}.{b64url(signature)}"
+
+                r = requests.post(
+                    token_uri,
+                    data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                        "assertion": signed_jwt
+                    },
+                    timeout=12
+                )
+                if r.status_code == 200:
+                    token_data = r.json()
+                    return token_data.get("access_token"), sa_proj, None
+                else:
+                    return None, sa_proj, f"向 Google 兑换 OAuth Token 失败 ({r.status_code}): {r.text[:120]}"
+            except ImportError:
+                return None, sa_proj, "未安装 google-auth 或 cryptography 依赖库，无法解析服务账号密钥。"
+            except Exception as e:
+                return None, sa_proj, f"服务账号自签名异常: {e}"
+
+        except Exception as e:
+            return None, None, f"读取服务账号 JSON 文件异常: {e}"
+
+    def _token_from_adc(self) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            import google.auth
+            import google.auth.transport.requests
+            creds, project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            creds.refresh(google.auth.transport.requests.Request())
+            return creds.token, project
+        except Exception:
+            return None, None
+
+    def _token_from_gcloud(self) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            cmd = "gcloud.cmd auth print-access-token" if os.name == "nt" else "gcloud auth print-access-token"
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=8)
+            if r.returncode == 0:
+                token = r.stdout.strip()
+                if token and not token.startswith("ERROR"):
+                    proj = self._detect_gcloud_project()
+                    return token, proj
+        except Exception:
+            pass
+        return None, None
+
+    def _detect_gcloud_project(self) -> Optional[str]:
+        try:
+            cmd = "gcloud.cmd config get-value project" if os.name == "nt" else "gcloud config get-value project"
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=6)
+            p = r.stdout.strip()
+            if p and "(unset)" not in p and not p.startswith("ERROR"):
+                return p
+        except Exception:
+            pass
+        return None
+
+
 class GeminiCritiqueEngine:
     def __init__(self):
         self.config_mgr = ConfigManager()
         self.context_memory = ContextMemoryManager()
         self.logger = get_log_manager()
+        self.vertex_auth = VertexAuthHelper(logger=self.logger)
+        self.antigravity_helper = AntigravityEngineHelper(logger=self.logger)
 
     @property
     def provider(self) -> str:
-        # 1. 优先以显式配置的 api_provider 为准
         prov = self.config_mgr.get("api_provider", "").strip().lower()
+        if prov in ("antigravity", "agy", "google_antigravity"):
+            return "antigravity"
+        if prov in ("vertex", "vertex_ai", "google_cloud", "gcp"):
+            return "vertex"
         if prov in ("gemini", "google"):
             return "gemini"
         if prov in ("openai_compatible", "openai", "openrouter"):
             return "openai_compatible"
 
-        # 2. 兜底识别：若未显式指定，根据 Key 前缀自动判断 (AQ / AIzaSy 均归入 gemini)
+        # 兜底识别
         key = self.api_key
         if key.startswith("AIzaSy") or key.startswith("AQ"):
             return "gemini"
@@ -44,38 +371,55 @@ class GeminiCritiqueEngine:
 
     @property
     def model(self) -> str:
-        return self.config_mgr.get("model", "gemini-3.8-flash").strip()
+        if self.provider == "antigravity":
+            default_model = "gemini-3.8-flash-high"
+        elif self.provider == "vertex":
+            default_model = "gemini-4-argon"
+        else:
+            default_model = "gemini-3.8-flash"
+        return self.config_mgr.get("model", default_model).strip()
 
     @property
     def custom_url(self) -> str:
         return self.config_mgr.get("custom_api_url", "https://openrouter.ai/api/v1").strip()
+
+    @property
+    def vertex_project_id(self) -> str:
+        return self.config_mgr.get("vertex_project_id", "").strip()
+
+    @property
+    def vertex_location(self) -> str:
+        return self.config_mgr.get("vertex_location", "global").strip()
+
+    @property
+    def vertex_credentials_file(self) -> str:
+        return self.config_mgr.get("vertex_credentials_file", "").strip()
 
     def test_connection(
         self,
         key: Optional[str] = None,
         model: Optional[str] = None,
         provider: Optional[str] = None,
-        custom_url: Optional[str] = None
+        custom_url: Optional[str] = None,
+        vertex_location: Optional[str] = None,
+        vertex_project_id: Optional[str] = None,
+        vertex_creds_file: Optional[str] = None
     ) -> Tuple[bool, str]:
-        """Test API Key validity for either Gemini or OpenAI/OpenRouter provider."""
+        """测试各渠道的算力可用性。"""
+        test_prov = (provider or self.provider).strip().lower()
         test_key = key.strip() if key is not None else self.api_key
-        test_model = model.strip() if model else self.model
-        test_prov = provider.strip().lower() if provider else self.provider
-        test_url = custom_url.strip() if custom_url else self.custom_url
+        test_model = (model or self.model).strip()
+        test_url = (custom_url or self.custom_url).strip()
 
-        if not test_key:
-            return False, "API Key 不能为空！"
+        if test_prov in ("antigravity", "agy", "google_antigravity"):
+            return self.antigravity_helper.test_connection(model=test_model)
 
-        # 若未指定有效 provider，根据 Key 前缀自动路由 (明确归入 Google Gemini 或 OpenAI 兼容)
-        if test_prov not in ("gemini", "openai_compatible"):
-            if test_key.startswith("AIzaSy") or test_key.startswith("AQ"):
-                test_prov = "gemini"
-            elif test_key.startswith("sk-"):
-                test_prov = "openai_compatible"
-            else:
-                test_prov = "gemini"
+        if test_prov in ("vertex_ai", "google_cloud", "gcp"):
+            test_prov = "vertex"
 
         if test_prov == "openai_compatible":
+            if not test_key:
+                return False, "API Key 不能为空！"
             base = test_url.rstrip("/")
             endpoint = base if base.endswith("/chat/completions") else f"{base}/chat/completions"
             headers = {
@@ -97,8 +441,55 @@ class GeminiCritiqueEngine:
                     return False, f"API 返回错误 ({r.status_code}): {r.text[:120]}"
             except Exception as e:
                 return False, f"网络连接超时或错误: {e}"
+
+        elif test_prov == "vertex":
+            loc = (vertex_location or self.vertex_location).strip() or "global"
+            creds_f = vertex_creds_file if vertex_creds_file is not None else self.vertex_credentials_file
+            proj = (vertex_project_id if vertex_project_id is not None else self.vertex_project_id).strip()
+
+            token, resolved_proj, auth_key, err = self.vertex_auth.get_auth(
+                creds_file=creds_f,
+                project_id=proj,
+                api_key=test_key
+            )
+            if not token and not auth_key:
+                return False, err or "未能获取有效的 Vertex AI 认证凭据！"
+            if not resolved_proj:
+                return False, "未能识别到 Google Cloud 项目 ID (Project ID)！请在输入框中填入 GCP Project ID。"
+
+            host = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
+            url = f"https://{host}/v1beta1/projects/{resolved_proj}/locations/{loc}/publishers/google/models/{test_model}:generateContent"
+            if auth_key and not token:
+                url += f"?key={auth_key}"
+
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            if auth_key and not token:
+                headers["x-goog-api-key"] = auth_key
+
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": "ping"}]}],
+                "generationConfig": {"maxOutputTokens": 10}
+            }
+            try:
+                r = requests.post(url, json=payload, headers=headers, timeout=12)
+                if r.status_code == 200:
+                    return True, f"连接成功！Google Cloud Vertex AI ({test_model}) [项目: {resolved_proj}, 区域: {loc}] 响应正常！"
+                else:
+                    err_text = r.text[:180]
+                    if r.status_code == 403:
+                        return False, f"Vertex AI 权限受限 (403): 请检查该服务账号是否具备 roles/aiplatform.user 权限并已关联有效结算账户。\n详情: {err_text}"
+                    elif r.status_code == 404:
+                        return False, f"Vertex AI 资源未找到 (404): 模型 {test_model} 可能在该区域暂未上线，推荐将区域调整为 global。\n详情: {err_text}"
+                    return False, f"Vertex AI 返回错误 ({r.status_code}): {err_text}"
+            except Exception as e:
+                return False, f"Vertex AI 网络连接超时或错误: {e}"
+
         else:
-            # Google Gemini native (双通道传递：URL 参数 ?key= 与 HTTP 请求头 x-goog-api-key)
+            # Google Gemini AI Studio native
+            if not test_key:
+                return False, "API Key 不能为空！"
             base = "https://generativelanguage.googleapis.com"
             url = f"{base}/v1beta/models/{test_model}:generateContent?key={test_key}"
             headers = {
@@ -126,14 +517,14 @@ class GeminiCritiqueEngine:
         image_b64: Optional[str] = None
     ) -> str:
         pet_name = self.config_mgr.get("pet_name", "哈Gemi")
-        if not self.api_key:
+
+        if self.provider not in ("vertex", "antigravity") and not self.api_key:
             return f"[curious] 喵？主人还没有在控制台配置 API Key 喵！快去填上密钥~"
 
         catchphrases = self.config_mgr.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
         custom_prompt = self.config_mgr.get("custom_system_prompt", "")
         persona_style = self.config_mgr.get("persona_style", "元气毒舌 (默认)")
 
-        # Retrieve rolling context memory (minimal tokens: ~20-35 tokens)
         history_context = self.context_memory.get_recent_context(scene, window_title, max_items=2)
         if history_context:
             self.logger.memory(f"提取到 {len(history_context)} 条前情记忆承接上下文: \"{history_context[-1][:20]}...\"")
@@ -148,10 +539,13 @@ class GeminiCritiqueEngine:
 
         if self.provider == "openai_compatible":
             text = self._call_openai_compatible(sys_prompt, user_prompt, image_b64, pet_name)
+        elif self.provider == "vertex":
+            text = self._call_vertex_ai(sys_prompt, user_prompt, image_b64, pet_name)
+        elif self.provider == "antigravity":
+            text = self._call_antigravity(sys_prompt, user_prompt, image_b64, pet_name)
         else:
             text = self._call_gemini_native(sys_prompt, user_prompt, image_b64, pet_name)
 
-        # Record into memory so subsequent critiques on this video/window will follow up and not repeat
         if text and not text.startswith("[relieved] 喵呜！"):
             self.context_memory.record_critique(scene, window_title, text, pet_name=pet_name)
 
@@ -166,17 +560,15 @@ class GeminiCritiqueEngine:
         image_b64: Optional[str] = None
     ) -> str:
         pet_name = self.config_mgr.get("pet_name", "哈Gemi")
-        if not self.api_key:
+
+        if self.provider not in ("vertex", "antigravity") and not self.api_key:
             return f"[curious] 喵？主人还没有在控制台配置 API Key 喵！快去填上密钥~"
 
         catchphrases = self.config_mgr.get("catchphrases", ["喵~", "喵？！", "哼~", "盯——"])
         custom_prompt = self.config_mgr.get("custom_system_prompt", "")
         persona_style = self.config_mgr.get("persona_style", "元气毒舌 (默认)")
 
-        # Record user's comment into memory FIRST
         self.context_memory.record_user_comment(scene, window_title, user_comment)
-
-        # Retrieve rolling context memory including user's comment
         history_context = self.context_memory.get_recent_context(scene, window_title, max_items=3)
         self.logger.memory(f"主人在气泡吐槽: \"{user_comment}\" (上下文记忆 {len(history_context)} 条)")
 
@@ -191,6 +583,10 @@ class GeminiCritiqueEngine:
 
         if self.provider == "openai_compatible":
             text = self._call_openai_compatible(sys_prompt, user_prompt, image_b64, pet_name)
+        elif self.provider == "vertex":
+            text = self._call_vertex_ai(sys_prompt, user_prompt, image_b64, pet_name)
+        elif self.provider == "antigravity":
+            text = self._call_antigravity(sys_prompt, user_prompt, image_b64, pet_name)
         else:
             text = self._call_gemini_native(sys_prompt, user_prompt, image_b64, pet_name)
 
@@ -198,6 +594,23 @@ class GeminiCritiqueEngine:
             self.context_memory.record_critique(scene, window_title, text, pet_name=pet_name)
 
         return text
+
+    def _call_antigravity(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
+        try:
+            text = self.antigravity_helper.chat(
+                sys_prompt=sys_prompt,
+                user_prompt=user_prompt,
+                image_b64=image_b64,
+                model=self.model or "gemini-3.8-flash-high"
+            )
+            if text:
+                text = text.replace('"', '').replace('“', '').replace('”', '').strip()
+                return text
+            return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
+        except Exception as e:
+            print(f"[AntigravityEngine] Request failed: {e}", flush=True)
+            self.logger.error(f"Antigravity 订阅通道调用异常: {e}")
+            return f"[relieved] 喵呜~Antigravity 本地订阅算力连接超时或受到干扰喵！"
 
     def _call_gemini_native(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
         base_url = "https://generativelanguage.googleapis.com"
@@ -245,8 +658,11 @@ class GeminiCritiqueEngine:
                 candidates = result.get("candidates", [])
                 if candidates:
                     content_parts = candidates[0].get("content", {}).get("parts", [])
-                    if content_parts:
-                        text = content_parts[0].get("text", "").strip()
+                    text_parts = [p.get("text", "") for p in content_parts if not p.get("thought") and p.get("text")]
+                    if not text_parts:
+                        text_parts = [p.get("text", "") for p in content_parts if p.get("text")]
+                    if text_parts:
+                        text = "".join(text_parts).strip()
                         text = text.replace('"', '').replace('“', '').replace('”', '').strip()
                         return text
                 return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
@@ -256,6 +672,84 @@ class GeminiCritiqueEngine:
         except Exception as e:
             print(f"[GeminiEngine] Request failed: {e}", flush=True)
             return f"[relieved] 喵呜~刚才星轨通讯受到干扰，本{pet_name}正在重新调谐天线！"
+
+    def _call_vertex_ai(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
+        loc = self.vertex_location.strip() or "global"
+        token, proj_id, auth_key, err = self.vertex_auth.get_auth(
+            creds_file=self.vertex_credentials_file,
+            project_id=self.vertex_project_id,
+            api_key=self.api_key
+        )
+        if not token and not auth_key:
+            return f"[curious] 喵？Vertex AI 凭据未就绪：{err or '请在控制台设置密钥'}喵！"
+        if not proj_id:
+            return f"[curious] 喵？未识别到 Google Cloud Project ID，快去控制台填上喵~"
+
+        host = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
+        url = f"https://{host}/v1beta1/projects/{proj_id}/locations/{loc}/publishers/google/models/{self.model}:generateContent"
+        if auth_key and not token:
+            url += f"?key={auth_key}"
+
+        parts = []
+        if image_b64:
+            parts.append({
+                "inlineData": {
+                    "mimeType": "image/jpeg",
+                    "data": image_b64
+                }
+            })
+        parts.append({"text": user_prompt})
+
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": parts
+                }
+            ],
+            "systemInstruction": {
+                "parts": [
+                    {"text": sys_prompt}
+                ]
+            },
+            "generationConfig": {
+                "temperature": float(self.config_mgr.get("temperature", 0.88)),
+                "maxOutputTokens": 300
+            }
+        }
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if auth_key and not token:
+            headers["x-goog-api-key"] = auth_key
+
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                result = resp.json()
+                candidates = result.get("candidates", [])
+                if candidates:
+                    content_parts = candidates[0].get("content", {}).get("parts", [])
+                    text_parts = [p.get("text", "") for p in content_parts if not p.get("thought") and p.get("text")]
+                    if not text_parts:
+                        text_parts = [p.get("text", "") for p in content_parts if p.get("text")]
+                    if text_parts:
+                        text = "".join(text_parts).strip()
+                        text = text.replace('"', '').replace('“', '').replace('”', '').strip()
+                        return text
+                return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
+            else:
+                print(f"[VertexEngine] API Error {resp.status_code}: {resp.text}", flush=True)
+                self.logger.error(f"Vertex AI API 错误 ({resp.status_code}): {resp.text[:180]}")
+                if resp.status_code == 403:
+                    return f"[relieved] 喵呜！Vertex AI 权限受限 (403)，请确认服务账号有 roles/aiplatform.user 权限并已激活结算喵！"
+                elif resp.status_code == 404:
+                    return f"[relieved] 喵呜！模型 {self.model} 在区域 {loc} 未找到 (404)，推荐将区域设为 global 试试喵~"
+                return f"[relieved] 喵呜！Vertex API 返回了错误 ({resp.status_code})，快去日志查看详情喵~"
+        except Exception as e:
+            print(f"[VertexEngine] Request failed: {e}", flush=True)
+            self.logger.error(f"Vertex AI 网络请求异常: {e}")
+            return f"[relieved] 喵呜~Vertex 云端连接超时，请检查网络或区域配置喵！"
 
     def _call_openai_compatible(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
         base = self.custom_url.rstrip("/")

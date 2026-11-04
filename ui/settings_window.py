@@ -251,43 +251,87 @@ class SettingsWindow(QMainWindow):
         # Provider Selector
         box_api_l.addWidget(QLabel("接口类型 (Provider):"), 0, 0)
         self.combo_provider = QComboBox()
-        self.combo_provider.addItem("Google Gemini 官方原生接口", "gemini")
+        self.combo_provider.addItem("Google Gemini 官方原生接口 (AI Studio)", "gemini")
+        self.combo_provider.addItem("Google Cloud Vertex AI (GCP 算力/赠金)", "vertex")
+        self.combo_provider.addItem("Google Antigravity 订阅通道 (免Key/烧会员额度)", "antigravity")
         self.combo_provider.addItem("OpenRouter / OpenAI 兼容接口 (第三方/中转/自定义)", "openai_compatible")
         self.combo_provider.currentIndexChanged.connect(self._on_provider_changed)
         box_api_l.addWidget(self.combo_provider, 0, 1, 1, 3)
 
-        # API Base URL
+        # API Base URL (OpenAI compatible)
         self.lbl_api_url = QLabel("API 接口地址 (URL):")
         box_api_l.addWidget(self.lbl_api_url, 1, 0)
         self.input_api_url = QLineEdit()
         self.input_api_url.setPlaceholderText("https://openrouter.ai/api/v1 或中转站地址")
         box_api_l.addWidget(self.input_api_url, 1, 1, 1, 3)
 
+        # Vertex AI Location / Region
+        self.lbl_vertex_loc = QLabel("Vertex 区域 (Location):")
+        box_api_l.addWidget(self.lbl_vertex_loc, 2, 0)
+        self.combo_vertex_loc = QComboBox()
+        self.combo_vertex_loc.setEditable(True)
+        self.combo_vertex_loc.addItems([
+            "global",
+            "us-central1",
+            "us-east4",
+            "us-west1",
+            "asia-southeast1",
+            "asia-northeast1",
+            "europe-west2",
+            "europe-west4"
+        ])
+        box_api_l.addWidget(self.combo_vertex_loc, 2, 1, 1, 3)
+
+        # Vertex AI Project ID
+        self.lbl_vertex_project = QLabel("GCP 项目 ID (Project ID):")
+        box_api_l.addWidget(self.lbl_vertex_project, 3, 0)
+        self.input_vertex_project = QLineEdit()
+        self.input_vertex_project.setPlaceholderText("例如: my-project-id (留空可从密钥文件或 gcloud 自动提取)")
+        box_api_l.addWidget(self.input_vertex_project, 3, 1, 1, 3)
+
+        # Vertex AI Service Account JSON credentials file
+        self.lbl_vertex_creds = QLabel("服务账号密钥 (JSON 路径):")
+        box_api_l.addWidget(self.lbl_vertex_creds, 4, 0)
+        self.input_vertex_creds = QLineEdit()
+        self.input_vertex_creds.setPlaceholderText("选择 service-account.json 文件路径 (若已登录 gcloud 可留空)")
+        box_api_l.addWidget(self.input_vertex_creds, 4, 1, 1, 2)
+        self.btn_browse_creds = QPushButton("浏览...")
+        self.btn_browse_creds.setObjectName("SecondaryBtn")
+        self.btn_browse_creds.setFixedWidth(90)
+        self.btn_browse_creds.clicked.connect(self._browse_vertex_creds)
+        box_api_l.addWidget(self.btn_browse_creds, 4, 3)
+
         # API Key
         self.lbl_key = QLabel("API 密钥 (API Key):")
-        box_api_l.addWidget(self.lbl_key, 2, 0)
+        box_api_l.addWidget(self.lbl_key, 5, 0)
         self.input_key = QLineEdit()
         self.input_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_key.setPlaceholderText("填入 API 密钥")
-        box_api_l.addWidget(self.input_key, 2, 1)
+        box_api_l.addWidget(self.input_key, 5, 1)
 
         self.btn_show_key = QPushButton("显示")
         self.btn_show_key.setObjectName("SecondaryBtn")
         self.btn_show_key.setFixedWidth(75)
         self.btn_show_key.clicked.connect(self._toggle_key_visibility)
-        box_api_l.addWidget(self.btn_show_key, 2, 2)
+        box_api_l.addWidget(self.btn_show_key, 5, 2)
 
         self.btn_test_key = QPushButton("测试连接")
         self.btn_test_key.setObjectName("SecondaryBtn")
         self.btn_test_key.setFixedWidth(90)
         self.btn_test_key.clicked.connect(self._test_api_connection)
-        box_api_l.addWidget(self.btn_test_key, 2, 3)
+        box_api_l.addWidget(self.btn_test_key, 5, 3)
 
         # Model Selector (Editable)
-        box_api_l.addWidget(QLabel("视觉推理模型 (Model):"), 3, 0)
+        box_api_l.addWidget(QLabel("视觉推理模型 (Model):"), 6, 0)
         self.combo_model = QComboBox()
         self.combo_model.setEditable(True)
-        box_api_l.addWidget(self.combo_model, 3, 1, 1, 3)
+        box_api_l.addWidget(self.combo_model, 6, 1, 1, 3)
+
+        # Vertex Tips Hint
+        self.lbl_vertex_hint = QLabel("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-2.5-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
+        self.lbl_vertex_hint.setWordWrap(True)
+        self.lbl_vertex_hint.setStyleSheet("color: #ff99bb; font-size: 11px;")
+        box_api_l.addWidget(self.lbl_vertex_hint, 7, 0, 1, 4)
 
         layout.addWidget(box_api)
 
@@ -607,6 +651,14 @@ class SettingsWindow(QMainWindow):
                 self.combo_provider.setCurrentIndex(0)
 
             self.input_api_url.setText(cfg.get("custom_api_url", "https://openrouter.ai/api/v1"))
+            self.input_vertex_project.setText(cfg.get("vertex_project_id", ""))
+            v_loc = cfg.get("vertex_location", "global")
+            v_idx = self.combo_vertex_loc.findText(v_loc)
+            if v_idx >= 0:
+                self.combo_vertex_loc.setCurrentIndex(v_idx)
+            else:
+                self.combo_vertex_loc.setCurrentText(v_loc)
+            self.input_vertex_creds.setText(cfg.get("vertex_credentials_file", ""))
             self._on_provider_changed()
 
             self.input_key.setText(cfg.get("api_key", ""))
@@ -699,13 +751,53 @@ class SettingsWindow(QMainWindow):
         self.outfit_cards[emo_key]["filename"] = default_fn
         self._refresh_avatar_preview(emo_key, default_fn)
 
+    def _browse_vertex_creds(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择 Google Cloud 服务账号 JSON 密钥文件", "", "JSON 密钥文件 (*.json);;所有文件 (*.*)"
+        )
+        if file_path:
+            self.input_vertex_creds.setText(file_path)
+            if not self.input_vertex_project.text().strip():
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                        pid = d.get("project_id", "")
+                        if pid:
+                            self.input_vertex_project.setText(pid)
+                except Exception:
+                    pass
+
     def _on_provider_changed(self):
         prov = self.combo_provider.currentData()
         curr_text = self.combo_model.currentText()
         self.combo_model.clear()
-        if prov == "gemini":
-            self.lbl_api_url.setVisible(False)
-            self.input_api_url.setVisible(False)
+
+        is_vertex = (prov == "vertex")
+        is_agy = (prov == "antigravity")
+        is_openai = (prov == "openai_compatible")
+        is_gemini = (prov == "gemini")
+
+        self.lbl_api_url.setVisible(is_openai)
+        self.input_api_url.setVisible(is_openai)
+
+        self.lbl_vertex_loc.setVisible(is_vertex)
+        self.combo_vertex_loc.setVisible(is_vertex)
+        self.lbl_vertex_project.setVisible(is_vertex)
+        self.input_vertex_project.setVisible(is_vertex)
+        self.lbl_vertex_creds.setVisible(is_vertex)
+        self.input_vertex_creds.setVisible(is_vertex)
+        self.btn_browse_creds.setVisible(is_vertex)
+        self.lbl_vertex_hint.setVisible(is_vertex or is_agy)
+
+        # Restore key inputs if moving away from antigravity
+        if not is_agy:
+            self.input_key.setEnabled(True)
+            self.btn_show_key.setVisible(True)
+            if self.input_key.text().startswith("✅ 已自动识别"):
+                self.input_key.setText(self.config_mgr.get("api_key", ""))
+                self.input_key.setEchoMode(QLineEdit.EchoMode.Password)
+
+        if is_gemini:
             self.lbl_key.setText("Gemini API Key:")
             self.input_key.setPlaceholderText("填入 Gemini 官方 API 密钥 (AIzaSy... 或 AQ... 开头)")
             items = [
@@ -719,9 +811,47 @@ class SettingsWindow(QMainWindow):
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentIndex(0)
+        elif is_vertex:
+            self.lbl_vertex_hint.setText("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-2.5-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
+            self.lbl_key.setText("API Key / Token (可选):")
+            self.input_key.setPlaceholderText("若使用服务账号 JSON 则此处留空；或填入 Vertex API Key / ya29 Access Token")
+            items = [
+                "gemini-4-argon",
+                "gemini-2.5-flash",
+                "gemini-2.5-pro",
+                "gemini-2.0-flash",
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
+                "claude-3-5-sonnet-v2@20241022"
+            ]
+            self.combo_model.addItems(items)
+            if curr_text in items:
+                self.combo_model.setCurrentText(curr_text)
+            elif curr_text and curr_text != "gemini-3.8-flash":
+                self.combo_model.setCurrentText(curr_text)
+            else:
+                self.combo_model.setCurrentText("gemini-4-argon")
+        elif is_agy:
+            self.lbl_vertex_hint.setText("💡 提示：Antigravity 订阅通道完全免 Key！自动使用本机 Google 开发者账号的 Antigravity 会员订阅额度，既不消耗 API 信用卡费用，也彻底免受 AI Studio 429 忙碌限制。")
+            self.lbl_key.setText("本地订阅凭据:")
+            self.input_key.setEnabled(False)
+            self.input_key.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.input_key.setText("✅ 已自动识别本机 Google Antigravity 订阅会话 (免配 Key)")
+            self.btn_show_key.setVisible(False)
+            items = [
+                "gemini-3.8-flash-high",
+                "gemini-3.8-flash-medium",
+                "gemini-3.8-flash-low",
+                "claude-sonnet-4-6",
+                "claude-opus-4-6-thinking",
+                "gpt-oss-120b-medium"
+            ]
+            self.combo_model.addItems(items)
+            if curr_text in items:
+                self.combo_model.setCurrentText(curr_text)
+            else:
+                self.combo_model.setCurrentText("gemini-3.8-flash-high")
         else:
-            self.lbl_api_url.setVisible(True)
-            self.input_api_url.setVisible(True)
             self.lbl_key.setText("OpenRouter / API Key:")
             self.input_key.setPlaceholderText("填入 sk-or-v1-... 或 sk-... 密钥")
             items = [
@@ -733,7 +863,7 @@ class SettingsWindow(QMainWindow):
                 "deepseek/deepseek-chat"
             ]
             self.combo_model.addItems(items)
-            if curr_text:
+            if curr_text in items or (curr_text and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high"]):
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentIndex(0)
@@ -766,12 +896,30 @@ class SettingsWindow(QMainWindow):
     def _test_api_connection(self):
         prov = self.combo_provider.currentData()
         key = self.input_key.text().strip()
+        if key.startswith("✅ 已自动识别"):
+            key = self.config_mgr.get("api_key", "")
         model = self.combo_model.currentText().strip()
         custom_url = self.input_api_url.text().strip()
+        vertex_loc = self.combo_vertex_loc.currentText().strip() or "global"
+        vertex_proj = self.input_vertex_project.text().strip()
+        vertex_creds = self.input_vertex_creds.text().strip()
 
-        if not key:
+        if prov == "antigravity":
+            # Antigravity uses local credentials
+            pass
+        elif prov != "vertex" and not key:
             QMessageBox.warning(self, "提示", "请先填入 API Key！")
             return
+        elif prov == "vertex" and not key and not vertex_creds:
+            reply = QMessageBox.question(
+                self,
+                "提示",
+                "未填写服务账号 JSON 密钥文件路径或 API Key。\n是否尝试使用本地 gcloud / ADC 自动凭据进行测试？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
         from brain.gemini_client import GeminiCritiqueEngine, is_valid_gemini_key
         # 若为 Gemini 官方端点且格式不符合常见特征 (兼容 AIzaSy 与 AQ 前缀)，做温和提示但允许用户继续
@@ -787,7 +935,15 @@ class SettingsWindow(QMainWindow):
                 return
 
         engine = GeminiCritiqueEngine()
-        ok, msg = engine.test_connection(key=key, model=model, provider=prov, custom_url=custom_url)
+        ok, msg = engine.test_connection(
+            key=key,
+            model=model,
+            provider=prov,
+            custom_url=custom_url,
+            vertex_location=vertex_loc,
+            vertex_project_id=vertex_proj,
+            vertex_creds_file=vertex_creds
+        )
         if ok:
             QMessageBox.information(self, "连接成功", msg)
         else:
@@ -882,7 +1038,12 @@ class SettingsWindow(QMainWindow):
         api_provider = self.combo_provider.currentData()
         custom_api_url = self.input_api_url.text().strip() or "https://openrouter.ai/api/v1"
         key = self.input_key.text().strip()
+        if key.startswith("✅ 已自动识别"):
+            key = self.config_mgr.get("api_key", "")
         model = self.combo_model.currentText().strip()
+        vertex_project_id = self.input_vertex_project.text().strip()
+        vertex_location = self.combo_vertex_loc.currentText().strip() or "global"
+        vertex_credentials_file = self.input_vertex_creds.text().strip()
         auto_mode = self.chk_auto.isChecked()
         cooldown = self.slider_cooldown.value()
         comment_games = self.chk_game.isChecked()
@@ -912,6 +1073,9 @@ class SettingsWindow(QMainWindow):
             "api_provider": api_provider,
             "custom_api_url": custom_api_url,
             "api_key": key,
+            "vertex_project_id": vertex_project_id,
+            "vertex_location": vertex_location,
+            "vertex_credentials_file": vertex_credentials_file,
             "model": model,
             "tencent_secret_id": tencent_secret_id,
             "tencent_secret_key": tencent_secret_key,

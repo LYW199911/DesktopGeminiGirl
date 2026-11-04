@@ -39,7 +39,17 @@ hiddenimports = [
     'brain.context_memory',
     'ui.interaction_dialog',
     'ui.bubble_widget',
+    'cryptography',
+    'cryptography.hazmat.primitives',
+    'cryptography.hazmat.primitives.asymmetric',
+    'cryptography.hazmat.primitives.serialization',
 ]
+
+try:
+    import google.auth
+    hiddenimports += ['google.auth', 'google.oauth2', 'google.oauth2.service_account']
+except ImportError:
+    pass
 
 a = Analysis(
     [os.path.join(BASE_DIR, 'main.py')],
