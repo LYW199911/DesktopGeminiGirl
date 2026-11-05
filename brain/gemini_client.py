@@ -55,12 +55,13 @@ class AntigravityEngineHelper:
         if not self.is_available():
             return False, "未检测到 Antigravity 运行环境 (未找到 agy 命令行或 google-antigravity SDK)。"
         try:
+            probe_model = "gemini-3.8-flash-low" if "gemini-3.8-flash" in model else model
             text = self.chat(
                 sys_prompt="You are a helpful assistant.",
                 user_prompt="Say 'ping' in one word.",
                 image_b64=None,
-                model=model,
-                timeout=25
+                model=probe_model,
+                timeout=60
             )
             if text:
                 return True, f"连接成功！Google Antigravity 订阅算力通道 ({model}) 响应正常，已使用您的本地会员订阅配额！"
@@ -74,7 +75,7 @@ class AntigravityEngineHelper:
         user_prompt: str,
         image_b64: Optional[str] = None,
         model: str = "gemini-3.8-flash-high",
-        timeout: int = 35
+        timeout: int = 75
     ) -> str:
         # 1. 优先尝试使用官方 google-antigravity Python SDK
         try:
@@ -122,7 +123,7 @@ class AntigravityEngineHelper:
                 except Exception:
                     pass
 
-    def _call_cli(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], model: str, timeout: int = 35) -> str:
+    def _call_cli(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], model: str, timeout: int = 75) -> str:
         temp_img_path = None
         try:
             full_prompt = f"【系统人设与角色准则】\n{sys_prompt}\n\n【用户与桌面场景】\n{user_prompt}"
