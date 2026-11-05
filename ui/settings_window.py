@@ -662,7 +662,7 @@ class SettingsWindow(QMainWindow):
             self._on_provider_changed()
 
             self.input_key.setText(cfg.get("api_key", ""))
-            self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
+            self.combo_model.setCurrentText(cfg.get("model", "gemini-2.5-flash"))
             self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
             self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
@@ -801,13 +801,15 @@ class SettingsWindow(QMainWindow):
             self.lbl_key.setText("Gemini API Key:")
             self.input_key.setPlaceholderText("填入 Gemini 官方 API 密钥 (AIzaSy... 或 AQ... 开头)")
             items = [
-                "gemini-3.8-flash",
                 "gemini-2.5-flash",
+                "gemini-2.0-flash",
                 "gemini-1.5-pro",
                 "gemini-1.5-flash"
             ]
             self.combo_model.addItems(items)
             if curr_text in items:
+                self.combo_model.setCurrentText(curr_text)
+            elif curr_text and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high"]:
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentIndex(0)
@@ -863,7 +865,7 @@ class SettingsWindow(QMainWindow):
                 "deepseek/deepseek-chat"
             ]
             self.combo_model.addItems(items)
-            if curr_text in items or (curr_text and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high"]):
+            if curr_text in items or (curr_text and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high", "gemini-2.5-flash"]):
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentIndex(0)

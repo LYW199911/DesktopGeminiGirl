@@ -24,7 +24,7 @@
     - 默认采用 `global` 全球调度区域（自动跨地区负载均衡，超高可用与抗并发）；
     - 支持三种免折腾认证方式：**GCP 服务账号 JSON 密钥文件**、**本地 gcloud CLI / ADC 自动免密读取**、或 **Vertex API Key / Bearer Token**；
     - 自动过滤思考模型的思维链路（Thought/Reasoning），保证桌宠气泡播报纯净灵动。
-  - **Google Gemini 原生 (AI Studio)**：内置 `gemini-3.8-flash`、`gemini-2.5-flash`、`gemini-1.5-pro` 等标准 API 接口；
+  - **Google Gemini 原生 (AI Studio)**：内置 `gemini-2.5-flash`、`gemini-2.0-flash`、`gemini-1.5-pro` 等标准 API 接口，全面兼容新版 `AQ.` 授权密钥与传统 `AIzaSy` 密钥；
   - **OpenRouter / OpenAI 兼容接口**：支持自定义 API URL（如 OpenRouter、OneAPI、第三方中转站），自由填入 `anthropic/claude-3.5-sonnet`、`openai/gpt-4o`、`deepseek/deepseek-chat` 等视觉大模型。
 - **表情工坊与立绘差分**：
   - 内置 4 套情绪立绘差分（自信傲娇、呆萌疑惑、抱头震惊、无语擦汗）；

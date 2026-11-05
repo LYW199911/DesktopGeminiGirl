@@ -17,10 +17,11 @@ from .prompts import get_system_prompt, build_scene_prompt, build_interactive_pr
 from .context_memory import ContextMemoryManager
 
 def is_valid_gemini_key(key: str) -> bool:
-    """校验 Google Gemini API Key 是否符合规范 (同时兼容传统 AIzaSy 与新版 AQ 开头)"""
+    """校验 Google Gemini API Key 是否符合规范 (支持传统 AIza 开头与新版 AQ 授权密钥)"""
     if not key:
         return False
-    return bool(re.match(r"^(AIzaSy|AQ)[A-Za-z0-9_-]{20,}$", key.strip()))
+    k = key.strip()
+    return bool(re.match(r"^(AIza[A-Za-z0-9_-]{20,}|AQ[\w.-]{15,})$", k))
 
 class AntigravityEngineHelper:
     """Google Antigravity SDK & agy CLI 调度器 (直接消耗用户的 Antigravity 会员订阅算力)"""
@@ -359,7 +360,7 @@ class GeminiCritiqueEngine:
 
         # 兜底识别
         key = self.api_key
-        if key.startswith("AIzaSy") or key.startswith("AQ"):
+        if key.startswith("AIza") or key.startswith("AQ"):
             return "gemini"
         if key.startswith("sk-"):
             return "openai_compatible"
@@ -376,7 +377,7 @@ class GeminiCritiqueEngine:
         elif self.provider == "vertex":
             default_model = "gemini-4-argon"
         else:
-            default_model = "gemini-3.8-flash"
+            default_model = "gemini-2.5-flash"
         return self.config_mgr.get("model", default_model).strip()
 
     @property
@@ -490,22 +491,39 @@ class GeminiCritiqueEngine:
             # Google Gemini AI Studio native
             if not test_key:
                 return False, "API Key 不能为空！"
+
+            # 智能重定向：若用户选了仅在 Antigravity 或 Vertex 提供的模型，自动转换为 AI Studio 原生主力模型
+            if test_model in ("gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-4-argon") or "3.8" in test_model or "argon" in test_model:
+                test_model = "gemini-2.5-flash"
+
             base = "https://generativelanguage.googleapis.com"
             url = f"{base}/v1beta/models/{test_model}:generateContent?key={test_key}"
             headers = {
                 "Content-Type": "application/json",
                 "x-goog-api-key": test_key
             }
+            gen_config = {"maxOutputTokens": 10}
+            if "2.5" in test_model or "2.0" in test_model:
+                gen_config["thinkingConfig"] = {"thinkingBudget": 0}
+
             payload = {
                 "contents": [{"parts": [{"text": "ping"}]}],
-                "generationConfig": {"maxOutputTokens": 10, "thinkingConfig": {"thinkingBudget": 0}}
+                "generationConfig": gen_config
             }
             try:
                 r = requests.post(url, json=payload, headers=headers, timeout=10)
                 if r.status_code == 200:
                     return True, f"连接成功！Google Gemini ({test_model}) 算力响应正常。"
+                elif r.status_code == 404:
+                    return False, f"模型未找到 (404): AI Studio 暂不支持该模型 ({test_model})，请在设置中选择 'gemini-2.5-flash' 或 'gemini-2.0-flash'！\n详情: {r.text[:140]}"
+                elif r.status_code == 429:
+                    return False, f"算力超限/服务器繁忙 (429): Google AI Studio 免费额度已达限额 (每分钟 10~15 次) 或高峰期算力繁忙。建议稍后重试或切换至 Antigravity 订阅通道！\n详情: {r.text[:140]}"
+                elif r.status_code == 400:
+                    return False, f"参数或密钥错误 (400): 请检查 API Key 是否准确无误。\n详情: {r.text[:140]}"
+                elif r.status_code == 403:
+                    return False, f"权限或地区受限 (403): 请检查该 API Key 是否启用，或当前网络节点是否支持 Google AI Studio。\n详情: {r.text[:140]}"
                 else:
-                    return False, f"Gemini API 返回错误 ({r.status_code}): {r.text[:120]}"
+                    return False, f"Gemini API 返回错误 ({r.status_code}): {r.text[:140]}"
             except Exception as e:
                 return False, f"网络连接超时或错误: {e}"
 
@@ -613,8 +631,12 @@ class GeminiCritiqueEngine:
             return f"[relieved] 喵呜~Antigravity 本地订阅算力连接超时或受到干扰喵！"
 
     def _call_gemini_native(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
+        model = self.model
+        if model in ("gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-4-argon") or "3.8" in model or "argon" in model:
+            model = "gemini-2.5-flash"
+
         base_url = "https://generativelanguage.googleapis.com"
-        url = f"{base_url}/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        url = f"{base_url}/v1beta/models/{model}:generateContent?key={self.api_key}"
 
         parts = []
         if image_b64:
@@ -625,6 +647,15 @@ class GeminiCritiqueEngine:
                 }
             })
         parts.append({"text": user_prompt})
+
+        gen_config = {
+            "temperature": float(self.config_mgr.get("temperature", 0.88)),
+            "maxOutputTokens": 300
+        }
+        if "2.5" in model or "2.0" in model:
+            gen_config["thinkingConfig"] = {
+                "thinkingBudget": 64
+            }
 
         payload = {
             "contents": [
@@ -638,13 +669,7 @@ class GeminiCritiqueEngine:
                     {"text": sys_prompt}
                 ]
             },
-            "generationConfig": {
-                "temperature": float(self.config_mgr.get("temperature", 0.88)),
-                "maxOutputTokens": 300,
-                "thinkingConfig": {
-                    "thinkingBudget": 64
-                }
-            }
+            "generationConfig": gen_config
         }
         headers = {
             "Content-Type": "application/json",
