@@ -1,6 +1,7 @@
 # 哈Gemi (Desktop Gemini Girl)
 
 > **元气毒舌的 AI 桌面陪伴桌宠 · 实时视觉多模态屏幕感知 · 少女音锐评吐槽**  
+> 支持 **Windows** 与 **macOS (Apple Silicon & Intel)** 双平台原生运行。  
 > 支持 **Google Gemini 官方原生接口 (AI Studio)**、**Google Cloud Vertex AI (GCP 算力/赠金通道，支持 Gemini 4 Argon)**、**Google Antigravity 订阅通道 (免Key/烧会员额度)** 与 **OpenRouter / OpenAI 兼容自定义接口**。
 
 ---
@@ -8,12 +9,12 @@
 ## 核心特性
 
 - **全局屏幕多模态感知**：
-  - 自动识别当前活跃窗口，针对不同场景智能唤醒多模态视觉推理：
+  - 跨平台支持 Windows 与 macOS：自动识别当前前台活跃窗口（应用名与窗口标题，支持 macOS 原生 System Events 智能提取），针对不同场景智能唤醒多模态视觉推理：
     - **游戏战况锐评**：识别逆风劣势、逆天死法与下饭操作，毒舌不留情！
     - **视频与直播接梗**：深度参与 UP 主台词与弹幕互动，弹幕接梗妙语连珠！
     - **码字与工作摸鱼抓包**：报错抓现行、代码发呆吐槽、摸鱼立刻警告！
 - **多模型与多服务商全渠道支持**：
-  - **Google Antigravity 订阅通道 (全新！免Key/烧会员额度)**：
+  - **Google Antigravity 订阅通道 (免Key/烧会员额度)**：
     - 针对有 Antigravity 会员订阅的开发者量身打造，**无需申请或配置任何 API Key**；
     - 自动复用本机已登录的 Google Antigravity 会员凭证（支持 `google-antigravity` Python SDK 与 `agy` 原生 CLI 双通道桥接）；
     - 支持 `gemini-3.8-flash-high`、`claude-sonnet-4-6`、`claude-opus-4-6-thinking` 等顶级订阅模型；
@@ -24,44 +25,47 @@
     - 默认采用 `global` 全球调度区域（自动跨地区负载均衡，超高可用与抗并发）；
     - 支持三种免折腾认证方式：**GCP 服务账号 JSON 密钥文件**、**本地 gcloud CLI / ADC 自动免密读取**、或 **Vertex API Key / Bearer Token**；
     - 自动过滤思考模型的思维链路（Thought/Reasoning），保证桌宠气泡播报纯净灵动。
-  - **Google Gemini 原生 (AI Studio)**：内置 `gemini-2.5-flash`、`gemini-2.0-flash`、`gemini-1.5-pro` 等标准 API 接口，全面兼容新版 `AQ.` 授权密钥与传统 `AIzaSy` 密钥；
+  - **Google Gemini 原生 (AI Studio)**：内置 gemini-2.5-flash、gemini-2.0-flash、gemini-1.5-pro 等标准 API 接口，全面兼容新版 AQ 开头授权密钥与传统 AIzaSy 密钥；
   - **OpenRouter / OpenAI 兼容接口**：支持自定义 API URL（如 OpenRouter、OneAPI、第三方中转站），自由填入 `anthropic/claude-3.5-sonnet`、`openai/gpt-4o`、`deepseek/deepseek-chat` 等视觉大模型。
+- **跨平台原生语音与音效引擎**：
+  - **Windows**：底层基于 Windows MCI 多媒体引擎，毫秒级即时播报与插话打断；
+  - **macOS**：原生基于系统级 `afplay` 音频引擎，零外置依赖，极速响应并支持随时切断打断。
 - **表情工坊与立绘差分**：
   - 内置 4 套情绪立绘差分（自信傲娇、呆萌疑惑、抱头震惊、无语擦汗）；
   - 根据 AI 评论的情绪标签（`[shocked]`、`[curious]`、`[relieved]`、`[confident]`）全自动无缝切换立绘姿态；
   - **支持本地上传任意立绘**：内置智能去白底抠图算法，任意白底 JPG/PNG 自动秒转透明背景立绘。
 - **自适应漫画气泡框**：
-  - 纯白可爱圆角漫画气泡框配黑色粗体字体，自带萌系小尾巴；
+  - 纯白可爱圆角漫画气泡框配系统自适应黑体字体（macOS 完美匹配苹方 PingFang SC / 华文黑体，Windows 完美匹配微软雅黑），自带萌系小尾巴；
   - 动态预计算尺寸，根据长短句自动缩放，逐字打字机动效，支持右上角一键关闭与自由拖拽。
 - **Edge-TTS 萝莉/少女音播报**：
   - 集成微软高品质神经语音（晓伊、晓晓、云健等），吐槽文字同步语音播报；
   - 支持随时快捷键一键静音。
 - **现代化独立 GUI 控制台与系统托盘**：
   - 完整的管理中心（核心感知设置、立绘工坊、口癖与人设调教、实时运行流水日志）；
-  - 支持 Windows 开机自启、托盘小图标双击唤出、桌宠右键菜单。
+  - 跨平台开机自启（Windows 注册表 `Run` 项 / macOS `LaunchAgent` 用户守护项）；
+  - 托盘小图标双击唤出、桌宠右键菜单。
 - **安全与隐私保护**：
-  - 密钥纯本地存储在 `config.json` 中，绝不上报任何云端服务器；
+  - 密钥纯本地存储在 `config.json`（macOS 打包后保存在 `~/Library/Application Support/HaGemi/`），绝不上报任何云端服务器；
   - 拥有专属“桌宠自免盾”，永远不会检索或锐评自己与控制台窗口。
 
 ---
 
 ## 常用快捷键
 
-| 快捷键 / 交互 | 功能说明 |
-| :--- | :--- |
-| **`Ctrl + F9`** 或 **双击桌宠** | 立即召唤哈Gemi对当前屏幕/窗口进行视觉锐评 |
-| **`Ctrl + F10`** | 切换语音播报（开启 / 静音） |
-| **`Ctrl + F1`** | 开始录音；再次按下后停止并通过腾讯云识别，识别文字会发送给桌宠 |
-| **`Ctrl + F11`** 或 **鼠标滚轮滑动立绘** | 瞬间循环切换下一个立绘姿态/表情差分 |
-| **鼠标中键点击桌宠** | 快速切换立绘姿态 |
-| **右键点击桌宠** / **双击托盘图标** | 打开【控制台与设置中心】 |
-| **点击气泡右上角 `×`** | 快速关闭当前说话气泡 |
+| 快捷键 (Windows) | 快捷键 (macOS) | 鼠标交互 | 功能说明 |
+| :--- | :--- | :--- | :--- |
+| **`Ctrl + F9`** | **`Cmd + F9`** 或 **`Ctrl + F9`** | **双击桌宠** | 立即召唤哈Gemi对当前屏幕/前台窗口进行视觉锐评 |
+| **`Ctrl + F10`** | **`Cmd + F10`** 或 **`Ctrl + F10`** | - | 切换语音播报（开启 / 静音） |
+| **`Ctrl + F1`** | **`Cmd + F1`** 或 **`Ctrl + F1`** | - | 开始录音；再次按下后停止并通过语音识别，文字发送给桌宠 |
+| **`Ctrl + F11`** | **`Cmd + F11`** 或 **`Ctrl + F11`** | **滚轮滑动立绘 / 鼠标中键** | 瞬间循环切换下一个立绘姿态/表情差分 |
+| - | - | **右键桌宠 / 双击托盘图标** | 打开【控制台与设置中心】 |
+| - | - | **点击气泡右上角 `×`** | 快速关闭当前说话气泡 |
 
 ---
 
 ## 快速上手
 
-### 方式一：源码运行（开发者）
+### 方式一：源码运行（Windows / macOS）
 
 1. **克隆仓库并安装依赖**：
    ```bash
@@ -70,17 +74,27 @@
    pip install -r requirements.txt
    ```
 
-2. **配置 API 渠道**：
-   - 复制配置模板：
+2. **配置与启动**：
+   - **Windows**：
      ```bash
-     cp config.example.json config.json
+     start_pet.bat
+     # 或者 python main.py
      ```
-   - 运行桌面宠：
+   - **macOS**：
      ```bash
-     python main.py
-     # 或直接双击运行 start_pet.bat
+     chmod +x start_pet.sh
+     ./start_pet.sh
+     # 或者 python3 main.py
      ```
-   - 启动后右键桌宠或双击右下角托盘图标，在【核心与感知】中选择你的接口类型：
+
+3. **macOS 首次运行系统权限授权**：
+   macOS 的安全隐私机制要求应用在使用系统能力时获得授权。请在 macOS **「系统设置」 -> 「隐私与安全性」** 中为当前运行的终端（如 Terminal、iTerm2、VSCode）或打出的 `Ha-Gemi.app` 开启以下权限：
+   - **辅助功能 (Accessibility)**：用于全局快捷键（`Cmd+F1`、`Cmd+F9` 等）监听；
+   - **屏幕录制 (Screen Recording)**：用于桌宠截取前台窗口进行视觉理解；
+   - **麦克风 (Microphone)**：用于语音对线录音输入。
+
+4. **配置 API 渠道**：
+   - 启动后右键桌宠或点击托盘图标，在【核心与感知】中选择你的接口类型：
      - **Google Antigravity 订阅通道 (推荐)**：
        1. 零配置，无需填任何 Key；
        2. 模型可选 `gemini-3.8-flash-high`、`claude-sonnet-4-6` 等；
@@ -88,20 +102,32 @@
      - **Google Cloud Vertex AI (GCP 算力/赠金)**：
        1. 区域推荐 `global`，模型推荐 `gemini-4-argon`（体验最新思考推理大模型）或 `gemini-2.5-flash`；
        2. 填入 GCP 项目 ID；
-       3. 认证方式任选其一：点击【浏览】选择 GCP 服务账号 JSON 密钥文件（需在 GCP IAM 赋予 `Vertex AI User` 权限），或若本地已登录 gcloud 则直接留空凭据即可自动识别！
-     - **Google Gemini 官方原生接口 (AI Studio)**：填入 AI Studio API Key 即可。
+       3. 认证方式任选其一：点击【浏览】选择 GCP 服务账号 JSON 密钥文件，或若本地已登录 gcloud 则直接留空凭据即可自动识别！
+     - **Google Gemini 官方原生接口 (AI Studio)**：填入 AI Studio API Key（兼容 `AQ` 与 `AIzaSy` 前缀）。
      - **OpenRouter / OpenAI 兼容接口**：填入 URL 与 Key。
    - 点击【测试连接】并保存即可！
-   - 若使用语音输入，还需在同一设置页填写腾讯云 `SecretId` 和 `SecretKey`，并在腾讯云控制台开通语音识别。
 
-### 方式二：单机 EXE 一键打包
+---
 
-如果你想打包免安装独立版本发布给朋友：
-```bash
-# 执行打包脚本
-build_exe.bat
-```
-打包成功后，可在 `dist/Ha-Gemi/` 目录下找到 `Ha-Gemi.exe`。
+### 方式二：打包为独立分发程序
+
+- **Windows 打包 (.exe)**：
+  ```bash
+  build_exe.bat
+  ```
+  打包生成于 `dist\Ha-Gemi\`，直接双击 `Ha-Gemi.exe` 即可运行。
+
+- **macOS 打包 (.app & .zip)**：
+  ```bash
+  chmod +x build_mac.sh
+  ./build_mac.sh
+  ```
+  打包生成于 `dist/Ha-Gemi.app` 与 `dist/Ha-Gemi-macOS.zip`。  
+  > **macOS 提示“已损坏，无法打开”解决办法**：  
+  > 因未经 Apple 开发者签名公证，在另一台 Mac 解压打开时若提示损坏，在终端执行以下命令清除隔离属性即可正常运行：
+  > ```bash
+  > xattr -cr /Applications/Ha-Gemi.app
+  > ```
 
 ---
 
@@ -110,7 +136,8 @@ build_exe.bat
 ```text
 DesktopGeminiGirl/
 ├── assets/                     # 桌宠立绘、图标与表情差分
-│   ├── app_icon.ico            # 托盘与窗口图标
+│   ├── app_icon.ico            # Windows 托盘与窗口图标
+│   ├── app_icon.icns           # macOS 高清视网膜应用图标
 │   ├── avatar_standing.png     # 傲娇自信立绘
 │   ├── avatar_bust.png         # 疑惑Q版立绘
 │   ├── avatar_shocked.png      # 震惊表情
@@ -118,28 +145,33 @@ DesktopGeminiGirl/
 ├── brain/                      # AI 推理大脑
 │   ├── gemini_client.py        # Gemini 原生 / Vertex AI / Antigravity 订阅 / OpenRouter 调度引擎
 │   ├── prompts.py              # 元气毒舌人设与多场景提示词构建
+│   ├── context_memory.py       # 上下文记忆管理
 │   └── rate_limiter.py         # 智能感知冷却与场景限流器
 ├── perception/                 # 屏幕与桌面环境感知
-│   ├── window_tracker.py       # 前台活跃窗口与游戏/视频/代码场景分类识别
+│   ├── window_tracker.py       # 跨平台 (Win32/macOS System Events) 前台活跃窗口与场景分类
 │   ├── screen_capture.py       # 高性能局部/全屏屏幕截图与多模态图像压缩
 │   ├── tencent_asr.py          # 腾讯云一句话语音识别
-│   └── hotkey_listener.py      # 全局键盘全局快捷键监听 (pynput)
+│   └── hotkey_listener.py      # 全局键盘快捷键监听 (支持 Win/Mac 跨平台修饰键)
 ├── tts/                        # 语音播报模块
-│   └── edge_speaker.py         # 微软 Edge-TTS 异步语音生成与播放
+│   └── edge_speaker.py         # 微软 Edge-TTS 异步语音生成与播放 (Win32 MCI / macOS afplay)
 ├── ui/                         # 界面与交互设计
-│   ├── bubble_widget.py        # 自适应防塌陷漫画白气泡框
+│   ├── bubble_widget.py        # 自适应防塌陷漫画白气泡框 (PingFang SC / 微软雅黑 字体兼容)
 │   ├── pet_widget.py           # 悬浮桌宠挂件（支持拖拽、右键菜单、悬浮晃动）
 │   ├── settings_window.py      # 全功能 GUI 设置中心 (含 Vertex AI、Antigravity 会员与各渠道配置)
-│   ├── tray_icon.py            # Windows 系统托盘菜单
+│   ├── tray_icon.py            # 系统托盘菜单
+│   ├── interaction_dialog.py   # 吐槽交互对话框
 │   └── img_utils.py            # 智能白色背景抠图转换工具
-├── config_manager.py           # 配置读取保存与 Windows 注册表自启管理
+├── config_manager.py           # 配置管理与跨平台开机自启 (Win 注册表 / macOS LaunchAgent)
 ├── log_manager.py              # Qt 线程安全日志系统
-├── app_paths.py                # PyInstaller 冻结路径解析
-├── main.py                     # 程序入口与生命周期管理
+├── app_paths.py                # 跨平台与 PyInstaller 冻结路径解析 (macOS Application Support 适配)
+├── main.py                     # 程序入口、跨平台单实例锁与生命周期管理
 ├── config.example.json         # 配置文件示例（不含敏感 API Key）
 ├── requirements.txt            # Python 运行环境依赖
-├── build_exe.bat               # PyInstaller 一键编译脚本
-└── start_pet.bat               # Windows 一键启动脚本
+├── HaGemi.spec                 # 跨平台 PyInstaller 打包描述文件
+├── build_exe.bat               # Windows 一键编译脚本
+├── start_pet.bat               # Windows 一键启动脚本
+├── build_mac.sh                # macOS 一键打包脚本 (.app & .zip)
+└── start_pet.sh                # macOS 一键启动脚本
 ```
 
 ---

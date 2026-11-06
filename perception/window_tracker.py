@@ -1,17 +1,27 @@
 import os
 import sys
-import ctypes
-from ctypes import wintypes
-from typing import Tuple, Dict, Any
+import subprocess
+from typing import Tuple, Dict, Any, Optional
 
-user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
+IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
 
-PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+if IS_WIN:
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+else:
+    ctypes = None
+    wintypes = None
+    user32 = None
+    kernel32 = None
+    PROCESS_QUERY_LIMITED_INFORMATION = 0
 
 # Self-ignore list: never critique our own pet, terminal, or launcher!
 SELF_PROCESS_NAMES = [
-    "python.exe", "pythonw.exe"
+    "python.exe", "pythonw.exe", "python", "python3", "ha-gemi", "hagemi"
 ]
 
 SELF_TITLE_KEYWORDS = [
@@ -23,11 +33,13 @@ GAME_PROCESS_KEYWORDS = [
     "valorant", "dota2", "cs2", "csgo", "minecraft", "javaw", "blackmyth", "wukong",
     "eldenring", "monsterhunter", "overwatch", "apex", "pubg", "tslgame",
     "wutheringwaves", "zenlesszonezero", "zzz", "endfield", "palworld",
-    "cyberpunk2077", "baldursgate3", "bg3", "sekiro", "darktide", "helldivers"
+    "cyberpunk2077", "baldursgate3", "bg3", "sekiro", "darktide", "helldivers",
+    "residentevil", "hades"
 ]
 
 VIDEO_PROCESS_NAMES = [
-    "potplayer64.exe", "potplayer.exe", "vlc.exe", "mpv.exe", "bilibili.exe"
+    "potplayer64.exe", "potplayer.exe", "vlc.exe", "mpv.exe", "bilibili.exe",
+    "iina", "vlc", "quicktime player", "bilibili"
 ]
 
 VIDEO_TITLE_KEYWORDS = [
@@ -38,13 +50,23 @@ VIDEO_TITLE_KEYWORDS = [
 ]
 
 DEV_PROCESS_KEYWORDS = [
-    "code.exe", "devenv.exe", "pycharm64.exe", "idea64.exe", "clion64.exe", "cursor.exe", "sublime_text.exe"
+    "code.exe", "devenv.exe", "pycharm64.exe", "idea64.exe", "clion64.exe", "cursor.exe", "sublime_text.exe",
+    "code", "cursor", "xcode", "pycharm", "intellij", "clion", "terminal", "iterm2", "warp", "sublime text"
 ]
 
 CURRENT_PID = os.getpid()
 
 def get_foreground_window_info() -> Dict[str, Any]:
-    """Extract foreground window handle, title, process name, window rect and categorized scene."""
+    """Extract foreground window handle/id, title, process name, window rect and categorized scene."""
+    if IS_WIN:
+        return _get_win_window_info()
+    elif IS_MAC:
+        return _get_mac_window_info()
+    else:
+        return _get_linux_window_info()
+
+def _get_win_window_info() -> Dict[str, Any]:
+    """Windows implementation via Win32 API."""
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return {"hwnd": 0, "title": "", "process": "", "scene": "desktop", "rect": None, "is_self": False}
@@ -87,7 +109,6 @@ def get_foreground_window_info() -> Dict[str, Any]:
         "height": max(0, rect.bottom - rect.top)
     }
 
-    # Classify Scene
     scene = classify_scene(process_name, title)
 
     return {
@@ -98,6 +119,75 @@ def get_foreground_window_info() -> Dict[str, Any]:
         "rect": window_rect,
         "is_self": is_self
     }
+
+def _get_mac_window_info() -> Dict[str, Any]:
+    """macOS implementation via AppleScript / System Events (zero external dependencies)."""
+    try:
+        script = '''
+tell application "System Events"
+    set frontApp to first application process whose frontmost is true
+    set appName to name of frontApp
+    set appPid to unix id of frontApp
+    set winTitle to ""
+    set winBounds to ""
+    try
+        set frontWin to front window of frontApp
+        set winTitle to name of frontWin
+        set winPos to position of frontWin
+        set winSize to size of frontWin
+        set winBounds to (item 1 of winPos as text) & "," & (item 2 of winPos as text) & "," & (item 1 of winSize as text) & "," & (item 2 of winSize as text)
+    end try
+    return appName & "|||" & winTitle & "|||" & appPid & "|||" & winBounds
+end tell
+'''
+        res = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=1.2
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            parts = res.stdout.strip().split("|||")
+            proc_name = parts[0].strip() if len(parts) > 0 else ""
+            title = parts[1].strip() if len(parts) > 1 else ""
+            pid_str = parts[2].strip() if len(parts) > 2 else "0"
+            bounds_str = parts[3].strip() if len(parts) > 3 else ""
+
+            pid = int(pid_str) if pid_str.isdigit() else 0
+            rect = None
+            if bounds_str:
+                try:
+                    b = [int(float(x.strip())) for x in bounds_str.split(",") if x.strip()]
+                    if len(b) == 4:
+                        rect = {"left": b[0], "top": b[1], "width": b[2], "height": b[3]}
+                except Exception:
+                    pass
+
+            is_self = False
+            if pid == CURRENT_PID:
+                is_self = True
+            elif proc_name.lower() in [s.lower() for s in SELF_PROCESS_NAMES]:
+                is_self = True
+            elif any(kw in title.lower() for kw in SELF_TITLE_KEYWORDS):
+                is_self = True
+
+            scene = classify_scene(proc_name, title)
+            return {
+                "hwnd": pid,
+                "title": title,
+                "process": proc_name,
+                "scene": scene,
+                "rect": rect,
+                "is_self": is_self
+            }
+    except Exception as e:
+        pass
+
+    return {"hwnd": 0, "title": "", "process": "", "scene": "desktop", "rect": None, "is_self": False}
+
+def _get_linux_window_info() -> Dict[str, Any]:
+    """Linux fallback implementation."""
+    return {"hwnd": 0, "title": "", "process": "", "scene": "desktop", "rect": None, "is_self": False}
 
 def classify_scene(process_name: str, title: str) -> str:
     p_lower = process_name.lower()
@@ -121,6 +211,8 @@ def classify_scene(process_name: str, title: str) -> str:
     for kw in DEV_PROCESS_KEYWORDS:
         if kw in p_lower:
             return "work"
+    if any(k in t_lower for k in ["visual studio", "vscode", "pycharm", "intellij", "terminal", "powershell", "cmd.exe", "iterm", "cursor"]):
+        return "work"
 
-    # 4. Default browse / general desktop
+    # 4. Fallback to General
     return "general"

@@ -398,13 +398,27 @@ class DesktopPetController(QObject):
         QApplication.instance().quit()
 
 def main():
-    # Single Instance Guard via Win32 Named Mutex
-    ERROR_ALREADY_EXISTS = 183
-    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "HaGemi_SingleInstance_Mutex_9911")
-    last_err = ctypes.windll.kernel32.GetLastError()
-    if last_err == ERROR_ALREADY_EXISTS:
-        print("[Main] 哈Gemi 已在后台运行中，禁止重复启动多实例。", flush=True)
-        sys.exit(0)
+    # Single Instance Guard (Win32 Mutex on Windows / File Lock on macOS & Linux)
+    mutex = None
+    lock_file = None
+    if sys.platform == "win32":
+        import ctypes
+        ERROR_ALREADY_EXISTS = 183
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "HaGemi_SingleInstance_Mutex_9911")
+        last_err = ctypes.windll.kernel32.GetLastError()
+        if last_err == ERROR_ALREADY_EXISTS:
+            print("[Main] 哈Gemi 已在后台运行中，禁止重复启动多实例。", flush=True)
+            sys.exit(0)
+    else:
+        import fcntl
+        import tempfile
+        lock_path = os.path.join(tempfile.gettempdir(), "hagemi_single_instance.lock")
+        try:
+            lock_file = open(lock_path, "w")
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, OSError):
+            print("[Main] 哈Gemi 已在后台运行中，禁止重复启动多实例。", flush=True)
+            sys.exit(0)
 
     # Fix fractional DPI scaling rasterization issues on layered transparent windows
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
@@ -423,9 +437,18 @@ def main():
 
     exit_code = app.exec()
 
-    # Clean up mutex and guarantee immediate process termination without zombie threads
-    if mutex:
+    # Clean up mutex/lock and guarantee immediate process termination without zombie threads
+    if sys.platform == "win32" and mutex:
+        import ctypes
         ctypes.windll.kernel32.CloseHandle(mutex)
+    elif lock_file:
+        try:
+            import fcntl
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
+        except Exception:
+            pass
+
     os._exit(exit_code)
 
 if __name__ == "__main__":

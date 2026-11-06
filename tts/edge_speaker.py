@@ -1,14 +1,22 @@
 import os
+import sys
 import time
 import uuid
 import glob
 import asyncio
 import tempfile
 import threading
-import ctypes
+import subprocess
 import edge_tts
 
-winmm = ctypes.windll.winmm
+IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+
+if IS_WIN:
+    import ctypes
+    winmm = ctypes.windll.winmm
+else:
+    winmm = None
 
 class EdgeSpeaker:
     def __init__(self, voice: str = "zh-CN-XiaoyiNeural", rate: str = "+12%", pitch: str = "+15Hz", enabled: bool = True):
@@ -20,10 +28,28 @@ class EdgeSpeaker:
         os.makedirs(self._temp_dir, exist_ok=True)
         self._current_alias = "gemini_voice"
         self._lock = threading.Lock()
+        self._current_process: Optional[subprocess.Popen] = None
 
     def toggle(self) -> bool:
         self.enabled = not self.enabled
+        if not self.enabled:
+            self.stop()
         return self.enabled
+
+    def stop(self):
+        """Immediately stop any currently playing speech."""
+        if IS_WIN and winmm:
+            try:
+                winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
+            except Exception:
+                pass
+        elif self._current_process:
+            try:
+                if self._current_process.poll() is None:
+                    self._current_process.terminate()
+            except Exception:
+                pass
+            self._current_process = None
 
     def speak_async(self, text: str):
         if not self.enabled or not text:
@@ -38,6 +64,9 @@ class EdgeSpeaker:
     def _run_tts_and_play(self, text: str):
         with self._lock:
             try:
+                # Stop existing playback before starting new one
+                self.stop()
+
                 # Unique filename every time to prevent Windows file-locking Errno 13
                 unique_id = uuid.uuid4().hex[:10]
                 mp3_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
@@ -60,17 +89,47 @@ class EdgeSpeaker:
                 print(f"[TTS] Error generating or playing speech: {e}", flush=True)
 
     def _play_mp3(self, filepath: str):
-        try:
-            # Safely close existing MCI alias
-            winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
-            time.sleep(0.05)
-            # Open new audio
-            cmd_open = f'open "{filepath}" type mpegvideo alias {self._current_alias}'
-            res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
-            if res_open == 0:
-                winmm.mciSendStringW(f"play {self._current_alias}", None, 0, None)
-        except Exception as e:
-            print(f"[TTS] MCI Play Error: {e}", flush=True)
+        if IS_WIN and winmm:
+            try:
+                # Safely close existing MCI alias
+                winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
+                time.sleep(0.05)
+                # Open new audio
+                cmd_open = f'open "{filepath}" type mpegvideo alias {self._current_alias}'
+                res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
+                if res_open == 0:
+                    winmm.mciSendStringW(f"play {self._current_alias}", None, 0, None)
+            except Exception as e:
+                print(f"[TTS] Windows MCI Play Error: {e}", flush=True)
+        elif IS_MAC:
+            try:
+                # macOS built-in native audio player
+                self._current_process = subprocess.Popen(
+                    ["afplay", filepath],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception as e:
+                print(f"[TTS] macOS afplay Error: {e}", flush=True)
+        else:
+            # Linux fallback (paplay / ffplay / aplay / mpv)
+            for player in ["mpv", "ffplay", "paplay", "aplay"]:
+                try:
+                    args = [player, filepath]
+                    if player == "ffplay":
+                        args = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", filepath]
+                    elif player == "mpv":
+                        args = [player, "--no-video", filepath]
+                    self._current_process = subprocess.Popen(
+                        args,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    break
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    print(f"[TTS] Linux {player} Error: {e}", flush=True)
 
     def _cleanup_old_files(self):
         try:

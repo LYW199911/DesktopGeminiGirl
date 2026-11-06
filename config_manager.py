@@ -1,14 +1,22 @@
 import os
 import sys
 import json
-import winreg
 from typing import Dict, Any, Tuple
 from app_paths import BASE_DIR, CONFIG_FILE
 
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-APP_NAME = "GeminiDesktopPet_HaGemi"
+IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
 
-CYBER_WHALE_CONFIG = os.path.expanduser(r"C:\Users\linyu\.gemini\cyber-whale\ai_config.json")
+if IS_WIN:
+    import winreg
+    RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+else:
+    winreg = None
+    RUN_KEY = ""
+
+APP_NAME = "GeminiDesktopPet_HaGemi"
+MAC_LAUNCH_AGENT = os.path.expanduser("~/Library/LaunchAgents/com.lyw.hagemi.plist")
+CYBER_WHALE_CONFIG = os.path.expanduser("~/.gemini/cyber-whale/ai_config.json")
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "api_provider": "gemini",  # "gemini", "vertex", "antigravity", or "openai_compatible"
@@ -90,6 +98,7 @@ class ConfigManager:
         if new_config:
             self.config.update(new_config)
         try:
+            os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
             print("[ConfigManager] Settings saved to config.json")
@@ -102,32 +111,70 @@ class ConfigManager:
     def set(self, key: str, value: Any):
         self.config[key] = value
 
-    # Windows Startup Management
+    # Startup Management (Windows Registry / macOS LaunchAgent)
     def is_autostart_enabled(self) -> bool:
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as key:
-                val, _ = winreg.QueryValueEx(key, APP_NAME)
-                return bool(val)
-        except (FileNotFoundError, OSError):
-            return False
+        if IS_WIN and winreg:
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as key:
+                    val, _ = winreg.QueryValueEx(key, APP_NAME)
+                    return bool(val)
+            except (FileNotFoundError, OSError):
+                return False
+        elif IS_MAC:
+            return os.path.exists(MAC_LAUNCH_AGENT)
+        return False
 
     def set_autostart(self, enable: bool) -> bool:
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
-                if enable:
-                    if getattr(sys, 'frozen', False):
-                        exe_path = f'"{sys.executable}"'
+        if IS_WIN and winreg:
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                    if enable:
+                        if getattr(sys, 'frozen', False):
+                            exe_path = f'"{sys.executable}"'
+                        else:
+                            exe_path = f'"{os.path.abspath(os.path.join(BASE_DIR, "start_pet.bat"))}"'
+                        winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_path)
+                        print(f"[ConfigManager] Autostart enabled -> {exe_path}")
                     else:
-                        exe_path = f'"{os.path.abspath(os.path.join(BASE_DIR, "start_pet.bat"))}"'
-                    winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_path)
-                    print(f"[ConfigManager] Autostart enabled -> {exe_path}")
+                        try:
+                            winreg.DeleteValue(key, APP_NAME)
+                            print("[ConfigManager] Autostart disabled")
+                        except FileNotFoundError:
+                            pass
+                return True
+            except Exception as e:
+                print(f"[ConfigManager] Failed to set Windows autostart: {e}")
+                return False
+        elif IS_MAC:
+            try:
+                if enable:
+                    os.makedirs(os.path.dirname(MAC_LAUNCH_AGENT), exist_ok=True)
+                    target_cmd = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(os.path.join(BASE_DIR, "start_pet.sh"))
+                    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lyw.hagemi</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{target_cmd}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>"""
+                    with open(MAC_LAUNCH_AGENT, "w", encoding="utf-8") as f:
+                        f.write(plist_content)
+                    print(f"[ConfigManager] macOS LaunchAgent enabled -> {MAC_LAUNCH_AGENT}")
                 else:
-                    try:
-                        winreg.DeleteValue(key, APP_NAME)
-                        print("[ConfigManager] Autostart disabled")
-                    except FileNotFoundError:
-                        pass
-            return True
-        except Exception as e:
-            print(f"[ConfigManager] Error setting autostart: {e}")
-            return False
+                    if os.path.exists(MAC_LAUNCH_AGENT):
+                        os.remove(MAC_LAUNCH_AGENT)
+                        print("[ConfigManager] macOS LaunchAgent disabled")
+                return True
+            except Exception as e:
+                print(f"[ConfigManager] Failed to set macOS autostart: {e}")
+                return False
+        return False

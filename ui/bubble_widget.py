@@ -44,7 +44,10 @@ class SpeechBubble(QWidget):
         top_bar.setContentsMargins(2, 0, 0, 0)
 
         self.title_label = QLabel("哈Gemi", self.card)
-        t_font = QFont("Microsoft YaHei UI", 9, QFont.Weight.Bold)
+        t_font = QFont()
+        t_font.setFamilies(["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", "sans-serif"])
+        t_font.setPointSize(9)
+        t_font.setWeight(QFont.Weight.Bold)
         t_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         self.title_label.setFont(t_font)
         self.title_label.setStyleSheet("color: #ff4e88; background: transparent; border: none;")
@@ -85,7 +88,10 @@ class SpeechBubble(QWidget):
         self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        lbl_font = QFont("Microsoft YaHei UI", 10, QFont.Weight.DemiBold)
+        lbl_font = QFont()
+        lbl_font.setFamilies(["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", "sans-serif"])
+        lbl_font.setPointSize(10)
+        lbl_font.setWeight(QFont.Weight.DemiBold)
         lbl_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         self.label.setFont(lbl_font)
         self.label.setStyleSheet("""

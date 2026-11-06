@@ -13,8 +13,6 @@ sounddevice_datas, sounddevice_binaries, sounddevice_hiddenimports = collect_all
 datas += sounddevice_datas
 
 hiddenimports = [
-    'pynput.keyboard._win32',
-    'pynput.mouse._win32',
     'pynput',
     'sounddevice',
     *sounddevice_hiddenimports,
@@ -27,9 +25,7 @@ hiddenimports = [
     'PyQt6.QtCore',
     'PyQt6.QtGui',
     'PyQt6.QtWidgets',
-    'winreg',
     'ctypes',
-    'ctypes.wintypes',
     'aiohttp',
     'asyncio',
     'config_manager',
@@ -37,6 +33,15 @@ hiddenimports = [
     'app_paths',
     'version',
     'brain.context_memory',
+    'brain.gemini_client',
+    'brain.rate_limiter',
+    'perception.window_tracker',
+    'perception.screen_capture',
+    'perception.hotkey_listener',
+    'tts.edge_speaker',
+    'ui.pet_widget',
+    'ui.tray_icon',
+    'ui.settings_window',
     'ui.interaction_dialog',
     'ui.bubble_widget',
     'cryptography',
@@ -44,6 +49,19 @@ hiddenimports = [
     'cryptography.hazmat.primitives.asymmetric',
     'cryptography.hazmat.primitives.serialization',
 ]
+
+if sys.platform == 'win32':
+    hiddenimports += [
+        'pynput.keyboard._win32',
+        'pynput.mouse._win32',
+        'winreg',
+        'ctypes.wintypes',
+    ]
+elif sys.platform == 'darwin':
+    hiddenimports += [
+        'pynput.keyboard._darwin',
+        'pynput.mouse._darwin',
+    ]
 
 try:
     import google.auth
@@ -66,6 +84,14 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+icon_path = None
+if sys.platform == 'win32':
+    icon_path = os.path.join(BASE_DIR, 'assets', 'app_icon.ico')
+elif sys.platform == 'darwin':
+    icns = os.path.join(BASE_DIR, 'assets', 'app_icon.icns')
+    if os.path.exists(icns):
+        icon_path = icns
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -78,7 +104,7 @@ exe = EXE(
     upx=False,
     console=False,
     disable_windowed_traceback=False,
-    icon=os.path.join(BASE_DIR, 'assets', 'app_icon.ico'),
+    icon=icon_path,
 )
 
 coll = COLLECT(
@@ -90,3 +116,25 @@ coll = COLLECT(
     upx_exclude=[],
     name='Ha-Gemi',
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='Ha-Gemi.app',
+        icon=icon_path,
+        bundle_identifier='com.lyw.hagemi',
+        info_plist={
+            'CFBundleName': 'Ha-Gemi',
+            'CFBundleDisplayName': 'Ha-Gemi',
+            'CFBundleIdentifier': 'com.lyw.hagemi',
+            'CFBundleVersion': '1.3.0',
+            'CFBundleShortVersionString': '1.3.0',
+            'NSPrincipalClass': 'NSApplication',
+            'NSAppleScriptEnabled': False,
+            'NSHighResolutionCapable': True,
+            'NSSupportsAutomaticGraphicsSwitching': True,
+            'NSMicrophoneUsageDescription': '哈Gemi桌宠需要麦克风权限以支持语音互动与倾听。',
+            'NSScreenCaptureUsageDescription': '哈Gemi桌宠需要屏幕录制权限以识别当前屏幕内容并进行傲娇互动吐槽。',
+            'LSUIElement': False,
+        },
+    )

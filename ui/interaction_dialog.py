@@ -40,7 +40,10 @@ class InteractionDialog(QWidget):
         top_bar.setContentsMargins(0, 0, 0, 0)
 
         title_lbl = QLabel("💬 与哈Gemi吐槽互动", self.card)
-        t_font = QFont("Microsoft YaHei UI", 10, QFont.Weight.Bold)
+        t_font = QFont()
+        t_font.setFamilies(["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", "sans-serif"])
+        t_font.setPointSize(10)
+        t_font.setWeight(QFont.Weight.Bold)
         title_lbl.setFont(t_font)
         title_lbl.setStyleSheet("color: #ff4e88; background: transparent; border: none;")
         top_bar.addWidget(title_lbl)
@@ -90,13 +93,20 @@ class InteractionDialog(QWidget):
         quote_layout.setSpacing(2)
 
         quote_title = QLabel("哈Gemi刚才说:", self.quote_frame)
-        quote_title.setFont(QFont("Microsoft YaHei UI", 8, QFont.Weight.Bold))
+        q_font = QFont()
+        q_font.setFamilies(["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", "sans-serif"])
+        q_font.setPointSize(8)
+        q_font.setWeight(QFont.Weight.Bold)
+        quote_title.setFont(q_font)
         quote_title.setStyleSheet("color: #8c82a0; background: transparent; border: none;")
         quote_layout.addWidget(quote_title)
 
         self.quote_label = QLabel(self.quote_frame)
         self.quote_label.setWordWrap(True)
-        self.quote_label.setFont(QFont("Microsoft YaHei UI", 9))
+        body_font = QFont()
+        body_font.setFamilies(["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", "sans-serif"])
+        body_font.setPointSize(9)
+        self.quote_label.setFont(body_font)
         self.quote_label.setStyleSheet("color: #332d44; background: transparent; border: none;")
         quote_layout.addWidget(self.quote_label)
 
@@ -109,7 +119,7 @@ class InteractionDialog(QWidget):
 
         self.input_reply = QLineEdit(self.card)
         self.input_reply.setPlaceholderText("跟哈Gemi吐槽互动...(Enter发送)")
-        self.input_reply.setFont(QFont("Microsoft YaHei UI", 9))
+        self.input_reply.setFont(body_font)
         self.input_reply.setStyleSheet("""
             QLineEdit {
                 background-color: #f7f4fa;
