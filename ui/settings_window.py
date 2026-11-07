@@ -328,7 +328,7 @@ class SettingsWindow(QMainWindow):
         box_api_l.addWidget(self.combo_model, 6, 1, 1, 3)
 
         # Vertex Tips Hint
-        self.lbl_vertex_hint = QLabel("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-2.5-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
+        self.lbl_vertex_hint = QLabel("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-3.8-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
         self.lbl_vertex_hint.setWordWrap(True)
         self.lbl_vertex_hint.setStyleSheet("color: #ff99bb; font-size: 11px;")
         box_api_l.addWidget(self.lbl_vertex_hint, 7, 0, 1, 4)
@@ -662,7 +662,7 @@ class SettingsWindow(QMainWindow):
             self._on_provider_changed()
 
             self.input_key.setText(cfg.get("api_key", ""))
-            self.combo_model.setCurrentText(cfg.get("model", "gemini-2.5-flash"))
+            self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
             self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
             self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
@@ -799,37 +799,31 @@ class SettingsWindow(QMainWindow):
 
         if is_gemini:
             self.lbl_key.setText("Gemini API Key:")
-            self.input_key.setPlaceholderText("填入 Gemini 官方 API 密钥 (AIzaSy... 或 AQ... 开头)")
+            self.input_key.setPlaceholderText("填入 Gemini 官方 API 密钥 (AQ. 或 AIzaSy 开头)")
             items = [
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
-                "gemini-1.5-pro",
-                "gemini-1.5-flash"
+                "gemini-3.8-flash",
+                "gemini-4-argon"
             ]
             self.combo_model.addItems(items)
             if curr_text in items:
                 self.combo_model.setCurrentText(curr_text)
-            elif curr_text and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high"]:
+            elif curr_text and not any(t in curr_text for t in ("2.5", "2.0", "1.5", "3.8-flash-")):
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentIndex(0)
         elif is_vertex:
-            self.lbl_vertex_hint.setText("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-2.5-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
+            self.lbl_vertex_hint.setText("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-3.8-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
             self.lbl_key.setText("API Key / Token (可选):")
             self.input_key.setPlaceholderText("若使用服务账号 JSON 则此处留空；或填入 Vertex API Key / ya29 Access Token")
             items = [
                 "gemini-4-argon",
-                "gemini-2.5-flash",
-                "gemini-2.5-pro",
-                "gemini-2.0-flash",
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
+                "gemini-3.8-flash",
                 "claude-3-5-sonnet-v2@20241022"
             ]
             self.combo_model.addItems(items)
             if curr_text in items:
                 self.combo_model.setCurrentText(curr_text)
-            elif curr_text and curr_text != "gemini-3.8-flash":
+            elif curr_text and not any(t in curr_text for t in ("2.5", "2.0", "1.5", "3.8-flash-")):
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentText("gemini-4-argon")
@@ -844,6 +838,8 @@ class SettingsWindow(QMainWindow):
                 "gemini-3.8-flash-high",
                 "gemini-3.8-flash-medium",
                 "gemini-3.8-flash-low",
+                "gemini-3.8-flash",
+                "gemini-4-argon",
                 "claude-sonnet-4-6",
                 "claude-opus-4-6-thinking",
                 "gpt-oss-120b-medium"
@@ -857,15 +853,15 @@ class SettingsWindow(QMainWindow):
             self.lbl_key.setText("OpenRouter / API Key:")
             self.input_key.setPlaceholderText("填入 sk-or-v1-... 或 sk-... 密钥")
             items = [
-                "google/gemini-2.5-flash",
-                "google/gemini-flash-1.5",
+                "google/gemini-3.8-flash",
+                "google/gemini-4-argon",
                 "anthropic/claude-3.5-sonnet",
                 "openai/gpt-4o-mini",
                 "openai/gpt-4o",
                 "deepseek/deepseek-chat"
             ]
             self.combo_model.addItems(items)
-            if curr_text in items or (curr_text and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high", "gemini-2.5-flash"]):
+            if curr_text in items or (curr_text and not any(t in curr_text for t in ("2.5", "2.0", "1.5")) and curr_text not in ["gemini-3.8-flash", "gemini-4-argon", "gemini-3.8-flash-high"]):
                 self.combo_model.setCurrentText(curr_text)
             else:
                 self.combo_model.setCurrentIndex(0)

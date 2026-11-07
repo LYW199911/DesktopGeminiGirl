@@ -144,7 +144,8 @@ end tell
             ["osascript", "-e", script],
             capture_output=True,
             text=True,
-            timeout=1.2
+            timeout=1.2,
+            creationflags=0x08000000 if IS_WIN else 0
         )
         if res.returncode == 0 and res.stdout.strip():
             parts = res.stdout.strip().split("|||")

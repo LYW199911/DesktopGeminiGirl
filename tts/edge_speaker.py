@@ -107,7 +107,8 @@ class EdgeSpeaker:
                 self._current_process = subprocess.Popen(
                     ["afplay", filepath],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
+                    creationflags=0x08000000 if IS_WIN else 0
                 )
             except Exception as e:
                 print(f"[TTS] macOS afplay Error: {e}", flush=True)
@@ -123,7 +124,8 @@ class EdgeSpeaker:
                     self._current_process = subprocess.Popen(
                         args,
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.DEVNULL,
+                        creationflags=0x08000000 if IS_WIN else 0
                     )
                     break
                 except FileNotFoundError:

@@ -25,7 +25,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "vertex_project_id": "",
     "vertex_location": "global",
     "vertex_credentials_file": "",
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.8-flash",
     "tencent_secret_id": "",
     "tencent_secret_key": "",
     "temperature": 0.88,
@@ -68,13 +68,13 @@ class ConfigManager:
     def load(self) -> Dict[str, Any]:
         # 1. Fallback / inherit API key from cyber-whale if empty
         inherited_key = ""
-        inherited_model = "gemini-2.5-flash"
+        inherited_model = "gemini-3.8-flash"
         if os.path.exists(CYBER_WHALE_CONFIG):
             try:
                 with open(CYBER_WHALE_CONFIG, "r", encoding="utf-8") as f:
                     cw = json.load(f)
                     inherited_key = cw.get("api_key", "").strip()
-                    inherited_model = cw.get("model", "gemini-2.5-flash").strip()
+                    inherited_model = cw.get("model", "gemini-3.8-flash").strip()
             except Exception:
                 pass
 
