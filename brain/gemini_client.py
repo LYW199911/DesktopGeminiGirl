@@ -6,6 +6,10 @@ import base64
 import shutil
 import tempfile
 import subprocess
+import sys
+
+IS_WIN = sys.platform == "win32"
+CREATE_NO_WINDOW = 0x08000000 if IS_WIN else 0
 try:
     import requests
 except ImportError:
@@ -150,7 +154,7 @@ class AntigravityEngineHelper:
                 text=True,
                 timeout=timeout,
                 encoding="utf-8",
-                creationflags=0x08000000
+                creationflags=CREATE_NO_WINDOW
             )
             if r.returncode == 0:
                 out = r.stdout.strip()
@@ -333,7 +337,7 @@ class VertexAuthHelper:
                 capture_output=True,
                 text=True,
                 timeout=8,
-                creationflags=0x08000000
+                creationflags=CREATE_NO_WINDOW
             )
             if r.returncode == 0:
                 token = r.stdout.strip()
@@ -353,7 +357,7 @@ class VertexAuthHelper:
                 capture_output=True,
                 text=True,
                 timeout=6,
-                creationflags=0x08000000
+                creationflags=CREATE_NO_WINDOW
             )
             p = r.stdout.strip()
             if p and "(unset)" not in p and not p.startswith("ERROR"):
@@ -521,10 +525,10 @@ class GeminiCritiqueEngine:
             if any(tag in test_model for tag in ("2.5", "2.0", "1.5")) or test_model.startswith("gemini-3.8-flash-"):
                 test_model = "gemini-3.8-flash"
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{test_model}:generateContent"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{test_model}:generateContent?key={test_key}"
             headers = {
                 "Content-Type": "application/json",
-                "X-goog-api-key": test_key
+                "x-goog-api-key": test_key
             }
             payload = {
                 "contents": [
@@ -660,7 +664,7 @@ class GeminiCritiqueEngine:
         if any(tag in model for tag in ("2.5", "2.0", "1.5")) or model.startswith("gemini-3.8-flash-"):
             model = "gemini-3.8-flash"
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
 
         parts = []
         if image_b64:
@@ -693,7 +697,7 @@ class GeminiCritiqueEngine:
         }
         headers = {
             "Content-Type": "application/json",
-            "X-goog-api-key": self.api_key
+            "x-goog-api-key": self.api_key
         }
 
         try:
