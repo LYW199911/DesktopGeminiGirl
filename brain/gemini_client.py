@@ -17,11 +17,11 @@ from .prompts import get_system_prompt, build_scene_prompt, build_interactive_pr
 from .context_memory import ContextMemoryManager
 
 def is_valid_gemini_key(key: str) -> bool:
-    """校验 Google Gemini API Key 是否符合规范 (支持传统 AIza 开头与新版 AQ 授权密钥)"""
+    """校验 Google Gemini API Key 是否符合规范 (支持传统 AIza 开头与新版 AQ. 授权密钥)"""
     if not key:
         return False
     k = key.strip()
-    return bool(re.match(r"^(AIza[A-Za-z0-9_-]{20,}|AQ[\w.-]{15,})$", k))
+    return bool(re.match(r"^(AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_-]{15,}|AQ[\w.-]{15,})$", k))
 
 class AntigravityEngineHelper:
     """Google Antigravity SDK & agy CLI 调度器 (直接消耗用户的 Antigravity 会员订阅算力)"""
@@ -38,6 +38,9 @@ class AntigravityEngineHelper:
         home_agy = os.path.expanduser("~/.gemini/bin/agy.exe")
         if os.path.exists(home_agy):
             return home_agy
+        agy_local = os.path.expanduser("~/AppData/Local/agy/bin/agy.exe")
+        if os.path.exists(agy_local):
+            return agy_local
         local_agy = os.path.expanduser("~/AppData/Local/Programs/Antigravity/bin/agy.exe")
         if os.path.exists(local_agy):
             return local_agy
@@ -141,7 +144,14 @@ class AntigravityEngineHelper:
                 "--disable-slash-commands",
                 "--dangerously-skip-permissions"
             ]
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8")
+            r = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                creationflags=0x08000000
+            )
             if r.returncode == 0:
                 out = r.stdout.strip()
                 # 过滤可能夹带的 cli 内部日志或 thinking 标签
@@ -317,7 +327,14 @@ class VertexAuthHelper:
     def _token_from_gcloud(self) -> Tuple[Optional[str], Optional[str]]:
         try:
             cmd = "gcloud.cmd auth print-access-token" if os.name == "nt" else "gcloud auth print-access-token"
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=8)
+            r = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=0x08000000
+            )
             if r.returncode == 0:
                 token = r.stdout.strip()
                 if token and not token.startswith("ERROR"):
@@ -330,7 +347,14 @@ class VertexAuthHelper:
     def _detect_gcloud_project(self) -> Optional[str]:
         try:
             cmd = "gcloud.cmd config get-value project" if os.name == "nt" else "gcloud config get-value project"
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=6)
+            r = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=6,
+                creationflags=0x08000000
+            )
             p = r.stdout.strip()
             if p and "(unset)" not in p and not p.startswith("ERROR"):
                 return p
@@ -378,7 +402,7 @@ class GeminiCritiqueEngine:
         elif self.provider == "vertex":
             default_model = "gemini-4-argon"
         else:
-            default_model = "gemini-2.5-flash"
+            default_model = "gemini-3.8-flash"
         return self.config_mgr.get("model", default_model).strip()
 
     @property
@@ -489,34 +513,34 @@ class GeminiCritiqueEngine:
                 return False, f"Vertex AI 网络连接超时或错误: {e}"
 
         else:
-            # Google Gemini AI Studio native
+            # Google Gemini AI Studio native (对照官方 AQ. 开头密钥标准 cURL 格式)
             if not test_key:
                 return False, "API Key 不能为空！"
 
-            # 智能重定向：若用户选了仅在 Antigravity 或 Vertex 提供的模型，自动转换为 AI Studio 原生主力模型
-            if test_model in ("gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-4-argon") or "3.8" in test_model or "argon" in test_model:
-                test_model = "gemini-2.5-flash"
+            # 兼容转换：若配置中残留了已下线的旧版模型或 Antigravity 专属后缀，自动修正为现行主力模型
+            if any(tag in test_model for tag in ("2.5", "2.0", "1.5")) or test_model.startswith("gemini-3.8-flash-"):
+                test_model = "gemini-3.8-flash"
 
-            base = "https://generativelanguage.googleapis.com"
-            url = f"{base}/v1beta/models/{test_model}:generateContent?key={test_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{test_model}:generateContent"
             headers = {
                 "Content-Type": "application/json",
-                "x-goog-api-key": test_key
+                "X-goog-api-key": test_key
             }
-            gen_config = {"maxOutputTokens": 10}
-            if "2.5" in test_model or "2.0" in test_model:
-                gen_config["thinkingConfig"] = {"thinkingBudget": 0}
-
             payload = {
-                "contents": [{"parts": [{"text": "ping"}]}],
-                "generationConfig": gen_config
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": "ping"}
+                        ]
+                    }
+                ]
             }
             try:
-                r = requests.post(url, json=payload, headers=headers, timeout=10)
+                r = requests.post(url, json=payload, headers=headers, timeout=25)
                 if r.status_code == 200:
                     return True, f"连接成功！Google Gemini ({test_model}) 算力响应正常。"
                 elif r.status_code == 404:
-                    return False, f"模型未找到 (404): AI Studio 暂不支持该模型 ({test_model})，请在设置中选择 'gemini-2.5-flash' 或 'gemini-2.0-flash'！\n详情: {r.text[:140]}"
+                    return False, f"模型未找到 (404): AI Studio 暂不支持该模型 ({test_model})，请在设置中选择 'gemini-3.8-flash' 或 'gemini-4-argon'！\n详情: {r.text[:140]}"
                 elif r.status_code == 429:
                     return False, f"算力超限/服务器繁忙 (429): Google AI Studio 免费额度已达限额 (每分钟 10~15 次) 或高峰期算力繁忙。建议稍后重试或切换至 Antigravity 订阅通道！\n详情: {r.text[:140]}"
                 elif r.status_code == 400:
@@ -633,11 +657,10 @@ class GeminiCritiqueEngine:
 
     def _call_gemini_native(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
         model = self.model
-        if model in ("gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-4-argon") or "3.8" in model or "argon" in model:
-            model = "gemini-2.5-flash"
+        if any(tag in model for tag in ("2.5", "2.0", "1.5")) or model.startswith("gemini-3.8-flash-"):
+            model = "gemini-3.8-flash"
 
-        base_url = "https://generativelanguage.googleapis.com"
-        url = f"{base_url}/v1beta/models/{model}:generateContent?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
         parts = []
         if image_b64:
@@ -653,10 +676,6 @@ class GeminiCritiqueEngine:
             "temperature": float(self.config_mgr.get("temperature", 0.88)),
             "maxOutputTokens": 300
         }
-        if "2.5" in model or "2.0" in model:
-            gen_config["thinkingConfig"] = {
-                "thinkingBudget": 64
-            }
 
         payload = {
             "contents": [
@@ -674,11 +693,11 @@ class GeminiCritiqueEngine:
         }
         headers = {
             "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key
+            "X-goog-api-key": self.api_key
         }
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=12)
+            resp = requests.post(url, json=payload, headers=headers, timeout=25)
             if resp.status_code == 200:
                 result = resp.json()
                 candidates = result.get("candidates", [])
