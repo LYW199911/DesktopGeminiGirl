@@ -5,6 +5,7 @@ from PyQt6.QtCore import pyqtSignal
 
 class DesktopPetTray(QSystemTrayIcon):
     open_settings = pyqtSignal()
+    open_update_dialog = pyqtSignal()
     trigger_critique = pyqtSignal()
     reopen_bubble = pyqtSignal()
     cycle_outfit = pyqtSignal()
@@ -54,6 +55,10 @@ class DesktopPetTray(QSystemTrayIcon):
         act_settings = QAction("控制台与设置中心", self)
         act_settings.triggered.connect(self.open_settings.emit)
         menu.addAction(act_settings)
+
+        act_update = QAction("检查更新与最新公告...", self)
+        act_update.triggered.connect(self.open_update_dialog.emit)
+        menu.addAction(act_update)
 
         menu.addSeparator()
 

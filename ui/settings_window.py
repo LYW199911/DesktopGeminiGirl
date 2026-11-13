@@ -235,6 +235,12 @@ class SettingsWindow(QMainWindow):
         lbl_ver.setStyleSheet("color: #7d7594; font-size: 11px; font-weight: bold; padding-left: 8px;")
         bottom_bar.addWidget(lbl_ver)
 
+        self.btn_check_update = QPushButton("🔄 检查更新与公告", self)
+        self.btn_check_update.setObjectName("SecondaryBtn")
+        self.btn_check_update.setToolTip("查看最新版本更新公告，或一键检查是否有新版本发布")
+        self.btn_check_update.clicked.connect(self.open_update_dialog)
+        bottom_bar.addWidget(self.btn_check_update)
+
         bottom_bar.addStretch()
 
         self.btn_save = QPushButton("保存并立即生效", self)
@@ -247,6 +253,11 @@ class SettingsWindow(QMainWindow):
         bottom_bar.addWidget(self.btn_hide)
 
         main_layout.addLayout(bottom_bar)
+
+    def open_update_dialog(self):
+        from .update_dialog import UpdateDialog
+        dlg = UpdateDialog(is_dynamic=self.is_dynamic, parent=self)
+        dlg.exec()
 
     # ==========================
     # Tab 1: General & Senses
@@ -416,6 +427,10 @@ class SettingsWindow(QMainWindow):
         # Persistent Memory checkbox
         self.chk_memory = QCheckBox("开启长期记忆 (跨会话/开机后依然记住前情，保存在本地 memory.json)")
         box_sense_l.addWidget(self.chk_memory, 4, 0, 1, 2)
+
+        # Auto check update checkbox
+        self.chk_auto_update = QCheckBox("启动时自动检查新版本与最新公告 (GitHub Releases)")
+        box_sense_l.addWidget(self.chk_auto_update, 5, 0, 1, 2)
 
         layout.addWidget(box_sense)
 
@@ -782,6 +797,7 @@ class SettingsWindow(QMainWindow):
 
             self.chk_autostart.setChecked(self.config_mgr.is_autostart_enabled())
             self.chk_memory.setChecked(cfg.get("enable_persistent_memory", True))
+            self.chk_auto_update.setChecked(cfg.get("auto_check_update", True))
 
             self.input_agy_path.setText(cfg.get("antigravity_cli_path", ""))
 
@@ -1265,6 +1281,7 @@ class SettingsWindow(QMainWindow):
         comment_videos = self.chk_video.isChecked()
         comment_work = self.chk_work.isChecked()
         enable_persistent_memory = self.chk_memory.isChecked()
+        auto_check_update = self.chk_auto_update.isChecked()
 
         antigravity_cli_path = self.input_agy_path.text().strip()
 
@@ -1311,6 +1328,7 @@ class SettingsWindow(QMainWindow):
             "comment_on_videos": comment_videos,
             "comment_on_work": comment_work,
             "enable_persistent_memory": enable_persistent_memory,
+            "auto_check_update": auto_check_update,
             "antigravity_cli_path": antigravity_cli_path,
             "enable_tts": enable_tts,
             "tts_engine": tts_engine,

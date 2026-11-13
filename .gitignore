@@ -10,6 +10,7 @@ __pycache__/
 # PyInstaller build artifacts & temp directories
 build/
 dist/
+release_packages/
 *.spec.bak
 
 # Audio cache & temp files

@@ -86,6 +86,7 @@ class DynamicPetController(QObject):
         self.pet.quit_app.connect(self.quit)
 
         self.tray.open_settings.connect(self.show_settings)
+        self.tray.open_update_dialog.connect(self.settings_win.open_update_dialog)
         self.tray.trigger_critique.connect(self.trigger_manual_critique)
         self.tray.reopen_bubble.connect(self.pet.reopen_last_bubble)
         self.tray.cycle_outfit.connect(self.pet.cycle_next_outfit)
@@ -115,6 +116,25 @@ class DynamicPetController(QObject):
         greet_msg = f"{pet_name} 动态版就绪喵！现在我是活蹦乱跳的啦~ 随时按 Ctrl+F9 呼叫锐评吧！"
         self.logger.info(f"{pet_name} 动态独立版启动就绪！(版本: {DYNAMIC_VERSION})")
         QTimer.singleShot(1000, lambda: self.critique_ready.emit(greet_msg))
+
+        # Auto check update in background (delayed 4s after launch)
+        if self.config_mgr.get("auto_check_update", True):
+            QTimer.singleShot(4000, self._check_update_on_startup)
+
+    def _check_update_on_startup(self):
+        try:
+            from update_checker import UpdateChecker
+            self._startup_checker = UpdateChecker(current_version=DYNAMIC_VERSION, parent=self)
+            def on_finished(data, is_newer, err):
+                if is_newer and not err:
+                    new_tag = data.get("tag_name", "")
+                    self.logger.info(f"✨ 发现新版本 {new_tag}！")
+                    msg = f"[HAPPY] 盯——主人！我发现 GitHub 上发布了新版本 {new_tag} 喵！快去托盘或设置中心看看更新公告吧~ ✨"
+                    self.critique_ready.emit(msg)
+            self._startup_checker.check_finished.connect(on_finished)
+            self._startup_checker.check_async()
+        except Exception as e:
+            self.logger.warning(f"后台检查更新出错: {e}")
 
     def show_settings(self):
         self.settings_win.show()

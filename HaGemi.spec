@@ -44,6 +44,8 @@ hiddenimports = [
     'ui.settings_window',
     'ui.interaction_dialog',
     'ui.bubble_widget',
+    'ui.update_dialog',
+    'update_checker',
     'cryptography',
     'cryptography.hazmat.primitives',
     'cryptography.hazmat.primitives.asymmetric',
