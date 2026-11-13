@@ -8,6 +8,13 @@
 
 ## 核心特性
 
+- **双版本并行独立架构（经典静态版 + 全新动态独立版）**：
+  - **经典静态立绘版**：极简低功耗，支持 4 表情立绘工坊与本地一键去白底换装；
+  - **全新动态独立版**：
+    - **120 帧高精度动作序列**：待机呼吸、疯狂敲键盘写代码、被鼠标拖拽悬空挣扎晃动、点击开心跃动等连贯动作；
+    - **60 FPS 物理引擎解耦**：将动画播放与窗口物理拖拽、摇摆倾斜重力补偿及飘字粒子完全解耦，带来丝滑顺手的物理微动；
+    - **紧凑漫画对话气泡**：自适应猫耳方位定位，鼠标直接点击气泡即可打开互动输入框，随时沿上次锐评继续吐槽聊天；
+    - **专属动态立绘帧率滑块**：控制台支持 8 ~ 24 FPS 自由变速调节，快慢节奏由你掌控。
 - **全局屏幕多模态感知**：
   - 跨平台支持 Windows 与 macOS：自动识别当前前台活跃窗口（应用名与窗口标题，支持 macOS 原生 System Events 智能提取），针对不同场景智能唤醒多模态视觉推理：
     - **游戏战况锐评**：识别逆风劣势、逆天死法与下饭操作，毒舌不留情！
@@ -185,8 +192,13 @@ DesktopGeminiGirl/
 
 ---
 
-## 鸣谢与版权致谢 (Credits)
+## 鸣谢与版权致谢 (Credits & Acknowledgments)
 
+- **开源生态与动作资源致谢**：
+  - **[hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)**：提供了 100 款 120 帧连贯 WebP 动作序列图集与高质量配套音频，为动态版动作呈现提供了核心资产支持；
+  - **[KCFindstr/hagemi-pet-agy](https://github.com/KCFindstr/hagemi-pet-agy)**：探索了基于 Google Antigravity 原生 Sidecar 桌面萌宠与转录会话感知联动的优秀方案；
+  - **[lokicorvus/crosspet](https://github.com/lokicorvus/crosspet)**：为多姿态状态机、60 FPS 悬空挣扎物理反馈与边缘交互提供了极具价值的实现参考；
+  - **[Monokumakuki/Antigravity-Star-Suite](https://github.com/Monokumakuki/Antigravity-Star-Suite)**：为桌面部件与感知监控设计提供了宝贵的工程参考。
 - **桌宠立绘与表情差分出处**：感谢 B 站 UP 主 **[@Xx勿忘xX](https://space.bilibili.com/25914748)** 制作并分享的 Gemini 表情包与立绘差分（动态专栏原帖：[⭐Gemini⭐分享几个Gemini的表情包和立绘无耳差分](https://www.bilibili.com/opus/1264669110489317411)）。
 - **原立绘人设原创**：原版 Gemini 娘人设与主立绘出处为画师大佬 **@zipzip**。
 - **开源生态**：感谢 PyQt6、Edge-TTS 与 Google Gemini 提供的强大生态支持。

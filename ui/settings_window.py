@@ -41,8 +41,8 @@ PERSONA_PRESETS = {
 }
 
 TTS_VOICES = [
-    ("zh-TW-HsiaoChenNeural", "晓臻 (台湾软萌甜美 / 超自然不生硬 / 强烈推荐)"),
-    ("zh-CN-XiaoyiNeural", "晓伊 (活泼元气少女 / 经典傲娇)"),
+    ("zh-CN-XiaoyiNeural", "晓伊 (活泼元气少女 / 经典傲娇 / 默认推荐)"),
+    ("zh-TW-HsiaoChenNeural", "晓臻 (台湾软萌甜美 / 超自然不生硬)"),
     ("zh-CN-XiaoxiaoNeural", "晓晓 (知性温柔清澈)"),
     ("zh-TW-HsiaoYuNeural", "晓雨 (台湾柔和少女)"),
     ("zh-CN-liaoning-XiaobeiNeural", "晓北 (东北幽默萌妹)"),
@@ -59,12 +59,17 @@ class SettingsWindow(QMainWindow):
     settings_applied = pyqtSignal()
     request_manual_critique = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, is_dynamic: bool = False):
         super().__init__(parent)
+        self.is_dynamic = is_dynamic
         self.config_mgr = ConfigManager()
         self.logger = get_log_manager()
+        self.outfit_cards = {}
 
-        self.setWindowTitle(f"哈Gemi · 控制台与设置中心 {VERSION}")
+        if self.is_dynamic:
+            self.setWindowTitle(f"哈Gemi 动态版 · 控制台与设置中心 {VERSION}")
+        else:
+            self.setWindowTitle(f"哈Gemi · 控制台与设置中心 {VERSION}")
         self.setMinimumSize(820, 640)
         self.resize(860, 680)
 
@@ -200,17 +205,20 @@ class SettingsWindow(QMainWindow):
         main_layout.addWidget(self.tabs)
 
         self.tab_general = QWidget()
-        self.tab_avatar = QWidget()
+        if not self.is_dynamic:
+            self.tab_avatar = QWidget()
         self.tab_persona = QWidget()
         self.tab_logs = QWidget()
 
         self.tabs.addTab(self.tab_general, "核心与感知")
-        self.tabs.addTab(self.tab_avatar, "立绘与表情工坊")
+        if not self.is_dynamic:
+            self.tabs.addTab(self.tab_avatar, "立绘与表情工坊")
         self.tabs.addTab(self.tab_persona, "人设与口癖调教")
         self.tabs.addTab(self.tab_logs, "实时日志与记录")
 
         self._build_general_tab()
-        self._build_avatar_tab()
+        if not self.is_dynamic:
+            self._build_avatar_tab()
         self._build_persona_tab()
         self._build_logs_tab()
 
@@ -412,7 +420,7 @@ class SettingsWindow(QMainWindow):
         layout.addWidget(box_sense)
 
         # 3. Voice & Appearance Box
-        box_voice = QGroupBox("语音播报 (TTS) 与桌宠外观")
+        box_voice = QGroupBox("语音播报 (TTS) 与动态立绘设置" if self.is_dynamic else "语音播报 (TTS) 与桌宠外观")
         box_voice_l = QGridLayout(box_voice)
 
         self.chk_tts = QCheckBox("启用少女音语音吐槽播报")
@@ -502,6 +510,21 @@ class SettingsWindow(QMainWindow):
         size_box.addWidget(self.slider_height)
         size_box.addWidget(self.lbl_height_val)
         box_voice_l.addLayout(size_box, 9, 1, 1, 2)
+
+        if self.is_dynamic:
+            box_voice_l.addWidget(QLabel("动态立绘帧率调整:"), 10, 0)
+            fps_box = QHBoxLayout()
+            self.slider_fps = QSlider(Qt.Orientation.Horizontal)
+            self.slider_fps.setRange(8, 24)
+            current_fps = int(self.config_mgr.get("dynamic_fps", 15))
+            self.slider_fps.setValue(current_fps)
+            self.lbl_fps_val = QLabel(f"{current_fps} FPS ({current_fps/12.0:.2f}x 动作倍速)")
+            self.slider_fps.valueChanged.connect(
+                lambda v: self.lbl_fps_val.setText(f"{v} FPS ({v/12.0:.2f}x 动作倍速)")
+            )
+            fps_box.addWidget(self.slider_fps)
+            fps_box.addWidget(self.lbl_fps_val)
+            box_voice_l.addLayout(fps_box, 10, 1, 1, 2)
 
         layout.addWidget(box_voice)
 
@@ -768,7 +791,7 @@ class SettingsWindow(QMainWindow):
             if e_idx >= 0:
                 self.combo_tts_engine.setCurrentIndex(e_idx)
 
-            current_voice = cfg.get("tts_voice", "zh-TW-HsiaoChenNeural")
+            current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
             voice_found = False
             for i in range(self.combo_voice.count()):
                 if self.combo_voice.itemData(i) == current_voice:
@@ -805,12 +828,18 @@ class SettingsWindow(QMainWindow):
             self.slider_height.setValue(int(cfg.get("target_height", 250)))
             self.lbl_height_val.setText(f"{self.slider_height.value()} px")
 
+            if hasattr(self, 'slider_fps'):
+                fps_val = int(cfg.get("dynamic_fps", 15))
+                self.slider_fps.setValue(fps_val)
+                self.lbl_fps_val.setText(f"{fps_val} FPS ({fps_val/12.0:.2f}x 动作倍速)")
+
             # 2. Avatar Outfits
-            outfits = cfg.get("outfits", {})
-            for emo, card in self.outfit_cards.items():
-                fn = outfits.get(emo, card["default_fn"])
-                card["filename"] = fn
-                self._refresh_avatar_preview(emo, fn)
+            if hasattr(self, 'outfit_cards') and self.outfit_cards:
+                outfits = cfg.get("outfits", {})
+                for emo, card in self.outfit_cards.items():
+                    fn = outfits.get(emo, card["default_fn"])
+                    card["filename"] = fn
+                    self._refresh_avatar_preview(emo, fn)
 
             # 3. Persona
             self.input_name.setText(cfg.get("pet_name", "哈Gemi"))
@@ -1118,7 +1147,7 @@ class SettingsWindow(QMainWindow):
         engine_type = self.combo_tts_engine.currentData() or "edge_tts"
         voice = self.combo_voice.currentData()
         if voice == "custom":
-            voice = self.input_custom_voice.text().strip() or "zh-TW-HsiaoChenNeural"
+            voice = self.input_custom_voice.text().strip() or "zh-CN-XiaoyiNeural"
 
         rate_val = self.slider_rate.value()
         rate_str = f"{rate_val:+d}%"
@@ -1243,7 +1272,7 @@ class SettingsWindow(QMainWindow):
         tts_engine = self.combo_tts_engine.currentData() or "edge_tts"
         tts_voice = self.combo_voice.currentData()
         if tts_voice == "custom":
-            tts_voice = self.input_custom_voice.text().strip() or "zh-TW-HsiaoChenNeural"
+            tts_voice = self.input_custom_voice.text().strip() or "zh-CN-XiaoyiNeural"
         tts_rate = f"{self.slider_rate.value():+d}%"
         tts_pitch = f"{self.slider_pitch.value():+d}Hz"
         tts_api_url = self.input_tts_url.text().strip()
@@ -1263,7 +1292,7 @@ class SettingsWindow(QMainWindow):
         persona_style = self.combo_persona.currentText()
         custom_prompt = self.txt_custom_prompt.toPlainText().strip()
 
-        outfits = {emo: card["filename"] for emo, card in self.outfit_cards.items()}
+        outfits = {emo: card["filename"] for emo, card in self.outfit_cards.items()} if self.outfit_cards else self.config_mgr.get("outfits", {})
 
         # Save to config
         new_cfg = {
@@ -1292,6 +1321,7 @@ class SettingsWindow(QMainWindow):
             "tts_api_key": tts_api_key,
             "tts_model": tts_model,
             "target_height": target_height,
+            "dynamic_fps": self.slider_fps.value() if hasattr(self, 'slider_fps') else int(self.config_mgr.get("dynamic_fps", 15)),
             "pet_name": pet_name,
             "catchphrases": catchphrases,
             "persona_style": persona_style,

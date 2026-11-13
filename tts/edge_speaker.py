@@ -27,7 +27,7 @@ else:
 class EdgeSpeaker:
     def __init__(
         self,
-        voice: str = "zh-TW-HsiaoChenNeural",
+        voice: str = "zh-CN-XiaoyiNeural",
         rate: str = "+10%",
         pitch: str = "+10Hz",
         enabled: bool = True,
@@ -36,7 +36,7 @@ class EdgeSpeaker:
         api_key: str = "",
         model: str = ""
     ):
-        self.voice = voice or "zh-TW-HsiaoChenNeural"
+        self.voice = voice or "zh-CN-XiaoyiNeural"
         self.rate = rate or "+10%"
         self.pitch = pitch or "+10Hz"
         self.enabled = enabled
@@ -159,7 +159,7 @@ class EdgeSpeaker:
                 print(f"[TTS] Error generating or playing speech: {e}", flush=True)
 
     def _generate_edge_tts(self, text: str, output_path: str):
-        voice = self.voice or "zh-TW-HsiaoChenNeural"
+        voice = self.voice or "zh-CN-XiaoyiNeural"
         async def _generate():
             communicate = edge_tts.Communicate(
                 text=text,

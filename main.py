@@ -49,7 +49,7 @@ class DesktopPetController(QObject):
         self.engine = GeminiCritiqueEngine()
         self.rate_limiter = CritiqueRateLimiter(cooldown_seconds=self.config_mgr.get("cooldown_seconds", 45))
         self.speaker = EdgeSpeaker(
-            voice=self.config_mgr.get("tts_voice", "zh-TW-HsiaoChenNeural"),
+            voice=self.config_mgr.get("tts_voice", "zh-CN-XiaoyiNeural"),
             rate=self.config_mgr.get("tts_rate", "+10%"),
             pitch=self.config_mgr.get("tts_pitch", "+10Hz"),
             enabled=self.config_mgr.get("enable_tts", True),
@@ -136,7 +136,7 @@ class DesktopPetController(QObject):
 
         # Update TTS
         self.speaker.update_config(
-            voice=cfg.get("tts_voice", "zh-TW-HsiaoChenNeural"),
+            voice=cfg.get("tts_voice", "zh-CN-XiaoyiNeural"),
             rate=cfg.get("tts_rate", "+10%"),
             pitch=cfg.get("tts_pitch", "+10Hz"),
             enabled=cfg.get("enable_tts", True),
