@@ -41,10 +41,18 @@ PERSONA_PRESETS = {
 }
 
 TTS_VOICES = [
-    ("zh-CN-XiaoyiNeural", "晓伊 (活泼少女 / 推荐)"),
-    ("zh-CN-XiaoxiaoNeural", "晓晓 (知性清澈)"),
-    ("zh-CN-YunjianNeural", "云健 (元气少年)"),
-    ("zh-CN-YunxiNeural", "云希 (沉稳少年)")
+    ("zh-TW-HsiaoChenNeural", "晓臻 (台湾软萌甜美 / 超自然不生硬 / 强烈推荐)"),
+    ("zh-CN-XiaoyiNeural", "晓伊 (活泼元气少女 / 经典傲娇)"),
+    ("zh-CN-XiaoxiaoNeural", "晓晓 (知性温柔清澈)"),
+    ("zh-TW-HsiaoYuNeural", "晓雨 (台湾柔和少女)"),
+    ("zh-CN-liaoning-XiaobeiNeural", "晓北 (东北幽默萌妹)"),
+    ("zh-CN-shaanxi-XiaoniNeural", "晓妮 (陕西可爱方言妹)"),
+    ("zh-HK-HiuMaanNeural", "晓曼 (粤语甜美少女)"),
+    ("zh-CN-YunxiNeural", "云希 (温润清爽少年)"),
+    ("zh-CN-YunjianNeural", "云健 (元气活力正太)"),
+    ("ja-JP-NanamiNeural", "七海 Nanami (日系萌系二次元少女)"),
+    ("ja-JP-AoiNeural", "葵 Aoi (日系清纯少女)"),
+    ("custom", "自定义 (在下方输入 Edge-TTS 音色代码)")
 ]
 
 class SettingsWindow(QMainWindow):
@@ -301,6 +309,18 @@ class SettingsWindow(QMainWindow):
         self.btn_browse_creds.clicked.connect(self._browse_vertex_creds)
         box_api_l.addWidget(self.btn_browse_creds, 4, 3)
 
+        # Antigravity CLI Path (Custom)
+        self.lbl_agy_path = QLabel("Antigravity CLI 路径:")
+        box_api_l.addWidget(self.lbl_agy_path, 4, 0)
+        self.input_agy_path = QLineEdit()
+        self.input_agy_path.setPlaceholderText("留空自动探测；或手动指定 agy.exe / agy 路径")
+        box_api_l.addWidget(self.input_agy_path, 4, 1, 1, 2)
+        self.btn_browse_agy = QPushButton("浏览...")
+        self.btn_browse_agy.setObjectName("SecondaryBtn")
+        self.btn_browse_agy.setFixedWidth(90)
+        self.btn_browse_agy.clicked.connect(self._browse_agy_cli)
+        box_api_l.addWidget(self.btn_browse_agy, 4, 3)
+
         # API Key
         self.lbl_key = QLabel("API 密钥 (API Key):")
         box_api_l.addWidget(self.lbl_key, 5, 0)
@@ -396,20 +416,84 @@ class SettingsWindow(QMainWindow):
         box_voice_l = QGridLayout(box_voice)
 
         self.chk_tts = QCheckBox("启用少女音语音吐槽播报")
-        box_voice_l.addWidget(self.chk_tts, 0, 0)
+        box_voice_l.addWidget(self.chk_tts, 0, 0, 1, 2)
 
-        box_voice_l.addWidget(QLabel("语音音色:"), 1, 0)
+        # TTS Engine selector
+        box_voice_l.addWidget(QLabel("语音引擎类型:"), 1, 0)
+        self.combo_tts_engine = QComboBox()
+        self.combo_tts_engine.addItem("Edge-TTS (微软云端神经网络 / 免费免配置)", "edge_tts")
+        self.combo_tts_engine.addItem("自定义兼容接口 (GPT-SoVITS / CosyVoice / Fish Audio / OpenAI)", "openai_tts")
+        self.combo_tts_engine.currentIndexChanged.connect(self._on_tts_engine_changed)
+        box_voice_l.addWidget(self.combo_tts_engine, 1, 1, 1, 2)
+
+        # Edge-TTS Voice options
+        self.lbl_voice_choice = QLabel("语音音色:")
+        box_voice_l.addWidget(self.lbl_voice_choice, 2, 0)
         self.combo_voice = QComboBox()
         for v_id, label in TTS_VOICES:
             self.combo_voice.addItem(label, v_id)
-        box_voice_l.addWidget(self.combo_voice, 1, 1)
+        self.combo_voice.currentIndexChanged.connect(self._on_voice_changed)
+        box_voice_l.addWidget(self.combo_voice, 2, 1)
 
         self.btn_test_tts = QPushButton("试听发音")
         self.btn_test_tts.setObjectName("SecondaryBtn")
         self.btn_test_tts.clicked.connect(self._test_voice)
-        box_voice_l.addWidget(self.btn_test_tts, 1, 2)
+        box_voice_l.addWidget(self.btn_test_tts, 2, 2)
 
-        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 2, 0)
+        # Custom Edge-TTS input
+        self.lbl_custom_voice = QLabel("自定义音色代码:")
+        self.input_custom_voice = QLineEdit()
+        self.input_custom_voice.setPlaceholderText("例如: zh-TW-HsiaoChenNeural 或 ja-JP-NanamiNeural")
+        box_voice_l.addWidget(self.lbl_custom_voice, 3, 0)
+        box_voice_l.addWidget(self.input_custom_voice, 3, 1, 1, 2)
+
+        # Rate slider
+        self.lbl_rate = QLabel("语音语速:")
+        box_voice_l.addWidget(self.lbl_rate, 4, 0)
+        rate_box = QHBoxLayout()
+        self.slider_rate = QSlider(Qt.Orientation.Horizontal)
+        self.slider_rate.setRange(-30, 50)
+        self.slider_rate.setValue(10)
+        self.lbl_rate_val = QLabel("+10%")
+        self.slider_rate.valueChanged.connect(lambda v: self.lbl_rate_val.setText(f"{v:+d}%"))
+        rate_box.addWidget(self.slider_rate)
+        rate_box.addWidget(self.lbl_rate_val)
+        box_voice_l.addLayout(rate_box, 4, 1, 1, 2)
+
+        # Pitch slider
+        self.lbl_pitch = QLabel("语音语调 (音高):")
+        box_voice_l.addWidget(self.lbl_pitch, 5, 0)
+        pitch_box = QHBoxLayout()
+        self.slider_pitch = QSlider(Qt.Orientation.Horizontal)
+        self.slider_pitch.setRange(-20, 30)
+        self.slider_pitch.setValue(10)
+        self.lbl_pitch_val = QLabel("+10Hz")
+        self.slider_pitch.valueChanged.connect(lambda v: self.lbl_pitch_val.setText(f"{v:+d}Hz"))
+        pitch_box.addWidget(self.slider_pitch)
+        pitch_box.addWidget(self.lbl_pitch_val)
+        box_voice_l.addLayout(pitch_box, 5, 1, 1, 2)
+
+        # Custom TTS API fields (OpenAI / GPT-SoVITS)
+        self.lbl_tts_url = QLabel("TTS API 接口地址:")
+        self.input_tts_url = QLineEdit()
+        self.input_tts_url.setPlaceholderText("例如: http://127.0.0.1:9880/v1/audio/speech 或 http://localhost:5000/tts")
+        box_voice_l.addWidget(self.lbl_tts_url, 6, 0)
+        box_voice_l.addWidget(self.input_tts_url, 6, 1, 1, 2)
+
+        self.lbl_tts_key = QLabel("TTS API Key (可选):")
+        self.input_tts_key = QLineEdit()
+        self.input_tts_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_tts_key.setPlaceholderText("本地服务通常留空；第三方服务填入 Key")
+        box_voice_l.addWidget(self.lbl_tts_key, 7, 0)
+        box_voice_l.addWidget(self.input_tts_key, 7, 1, 1, 2)
+
+        self.lbl_tts_model = QLabel("TTS 模型/音色 (可选):")
+        self.input_tts_model = QLineEdit()
+        self.input_tts_model.setPlaceholderText("例如: default / tts-1 / cosyvoice")
+        box_voice_l.addWidget(self.lbl_tts_model, 8, 0)
+        box_voice_l.addWidget(self.input_tts_model, 8, 1, 1, 2)
+
+        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 9, 0)
         size_box = QHBoxLayout()
         self.slider_height = QSlider(Qt.Orientation.Horizontal)
         self.slider_height.setRange(160, 380)
@@ -417,7 +501,7 @@ class SettingsWindow(QMainWindow):
         self.slider_height.valueChanged.connect(lambda v: self.lbl_height_val.setText(f"{v} px"))
         size_box.addWidget(self.slider_height)
         size_box.addWidget(self.lbl_height_val)
-        box_voice_l.addLayout(size_box, 2, 1, 1, 2)
+        box_voice_l.addLayout(size_box, 9, 1, 1, 2)
 
         layout.addWidget(box_voice)
 
@@ -676,12 +760,47 @@ class SettingsWindow(QMainWindow):
             self.chk_autostart.setChecked(self.config_mgr.is_autostart_enabled())
             self.chk_memory.setChecked(cfg.get("enable_persistent_memory", True))
 
+            self.input_agy_path.setText(cfg.get("antigravity_cli_path", ""))
+
             self.chk_tts.setChecked(cfg.get("enable_tts", True))
-            current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
+            tts_engine = cfg.get("tts_engine", "edge_tts")
+            e_idx = self.combo_tts_engine.findData(tts_engine)
+            if e_idx >= 0:
+                self.combo_tts_engine.setCurrentIndex(e_idx)
+
+            current_voice = cfg.get("tts_voice", "zh-TW-HsiaoChenNeural")
+            voice_found = False
             for i in range(self.combo_voice.count()):
                 if self.combo_voice.itemData(i) == current_voice:
                     self.combo_voice.setCurrentIndex(i)
+                    voice_found = True
                     break
+            if not voice_found:
+                c_idx = self.combo_voice.findData("custom")
+                if c_idx >= 0:
+                    self.combo_voice.setCurrentIndex(c_idx)
+                self.input_custom_voice.setText(current_voice)
+
+            # Parse rate (e.g. "+12%" -> 12)
+            try:
+                rate_val = int(str(cfg.get("tts_rate", "+10%")).replace("%", "").replace("+", ""))
+            except Exception:
+                rate_val = 10
+            self.slider_rate.setValue(rate_val)
+            self.lbl_rate_val.setText(f"{rate_val:+d}%")
+
+            # Parse pitch (e.g. "+15Hz" -> 15)
+            try:
+                pitch_val = int(str(cfg.get("tts_pitch", "+10Hz")).replace("Hz", "").replace("+", ""))
+            except Exception:
+                pitch_val = 10
+            self.slider_pitch.setValue(pitch_val)
+            self.lbl_pitch_val.setText(f"{pitch_val:+d}Hz")
+
+            self.input_tts_url.setText(cfg.get("tts_api_url", ""))
+            self.input_tts_key.setText(cfg.get("tts_api_key", ""))
+            self.input_tts_model.setText(cfg.get("tts_model", ""))
+            self._on_tts_engine_changed()
 
             self.slider_height.setValue(int(cfg.get("target_height", 250)))
             self.lbl_height_val.setText(f"{self.slider_height.value()} px")
@@ -750,6 +869,45 @@ class SettingsWindow(QMainWindow):
     def _reset_avatar(self, emo_key: str, default_fn: str):
         self.outfit_cards[emo_key]["filename"] = default_fn
         self._refresh_avatar_preview(emo_key, default_fn)
+
+    def _browse_agy_cli(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择 Antigravity (agy) 可执行文件",
+            "",
+            "Executable Files (*.exe *.cmd *.bat agy*);;All Files (*)"
+        )
+        if file_path:
+            self.input_agy_path.setText(file_path)
+
+    def _on_tts_engine_changed(self):
+        engine = self.combo_tts_engine.currentData() or "edge_tts"
+        is_edge = (engine == "edge_tts")
+
+        self.lbl_voice_choice.setVisible(is_edge)
+        self.combo_voice.setVisible(is_edge)
+        self.lbl_rate.setVisible(is_edge)
+        self.slider_rate.setVisible(is_edge)
+        self.lbl_rate_val.setVisible(is_edge)
+        self.lbl_pitch.setVisible(is_edge)
+        self.slider_pitch.setVisible(is_edge)
+        self.lbl_pitch_val.setVisible(is_edge)
+
+        is_custom_voice = (is_edge and self.combo_voice.currentData() == "custom")
+        self.lbl_custom_voice.setVisible(is_custom_voice)
+        self.input_custom_voice.setVisible(is_custom_voice)
+
+        self.lbl_tts_url.setVisible(not is_edge)
+        self.input_tts_url.setVisible(not is_edge)
+        self.lbl_tts_key.setVisible(not is_edge)
+        self.input_tts_key.setVisible(not is_edge)
+        self.lbl_tts_model.setVisible(not is_edge)
+        self.input_tts_model.setVisible(not is_edge)
+
+    def _on_voice_changed(self):
+        is_custom = (self.combo_voice.currentData() == "custom")
+        self.lbl_custom_voice.setVisible(is_custom)
+        self.input_custom_voice.setVisible(is_custom)
 
     def _browse_vertex_creds(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -828,11 +986,20 @@ class SettingsWindow(QMainWindow):
             else:
                 self.combo_model.setCurrentText("gemini-4-argon")
         elif is_agy:
-            self.lbl_vertex_hint.setText("💡 提示：Antigravity 订阅通道完全免 Key！自动使用本机 Google 开发者账号的 Antigravity 会员订阅额度，既不消耗 API 信用卡费用，也彻底免受 AI Studio 429 忙碌限制。")
+            from brain.gemini_client import AntigravityEngineHelper
+            probe_helper = AntigravityEngineHelper(config_mgr=self.config_mgr)
+            found_bin = probe_helper._find_agy_binary(self.input_agy_path.text().strip())
+            if found_bin:
+                status_tip = f"✅ 已自动识别本机 Antigravity CLI ({os.path.basename(found_bin)})"
+                self.lbl_vertex_hint.setText(f"💡 提示：Antigravity 订阅通道完全免 Key！已成功适配本机 agy 命令行：{found_bin}，直接消耗会员算力，免受 429 限流。")
+            else:
+                status_tip = "⚠️ 未在标准目录找到 agy 命令行，请在下方点击「浏览」指定"
+                self.lbl_vertex_hint.setText("💡 提示：若未在默认目录找到 agy，请在下方「Antigravity CLI 路径」点击「浏览」选中您的 agy.exe / agy 路径即可。")
+
             self.lbl_key.setText("本地订阅凭据:")
             self.input_key.setEnabled(False)
             self.input_key.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.input_key.setText("✅ 已自动识别本机 Google Antigravity 订阅会话 (免配 Key)")
+            self.input_key.setText(status_tip)
             self.btn_show_key.setVisible(False)
             items = [
                 "gemini-3.8-flash-high",
@@ -948,9 +1115,30 @@ class SettingsWindow(QMainWindow):
             QMessageBox.critical(self, "连接失败", msg)
 
     def _test_voice(self):
+        engine_type = self.combo_tts_engine.currentData() or "edge_tts"
         voice = self.combo_voice.currentData()
+        if voice == "custom":
+            voice = self.input_custom_voice.text().strip() or "zh-TW-HsiaoChenNeural"
+
+        rate_val = self.slider_rate.value()
+        rate_str = f"{rate_val:+d}%"
+        pitch_val = self.slider_pitch.value()
+        pitch_str = f"{pitch_val:+d}Hz"
+        api_url = self.input_tts_url.text().strip()
+        api_key = self.input_tts_key.text().strip()
+        model = self.input_tts_model.text().strip()
+
         from tts.edge_speaker import EdgeSpeaker
-        speaker = EdgeSpeaker(voice=voice, enabled=True)
+        speaker = EdgeSpeaker(
+            voice=voice,
+            rate=rate_str,
+            pitch=pitch_str,
+            enabled=True,
+            engine_type=engine_type,
+            api_url=api_url,
+            api_key=api_key,
+            model=model
+        )
         name = self.input_name.text().strip() or "哈Gemi"
         speaker.speak_async(f"主人你好呀！我是你的桌面专属猫娘{name}喵~")
 
@@ -1049,8 +1237,19 @@ class SettingsWindow(QMainWindow):
         comment_work = self.chk_work.isChecked()
         enable_persistent_memory = self.chk_memory.isChecked()
 
+        antigravity_cli_path = self.input_agy_path.text().strip()
+
         enable_tts = self.chk_tts.isChecked()
+        tts_engine = self.combo_tts_engine.currentData() or "edge_tts"
         tts_voice = self.combo_voice.currentData()
+        if tts_voice == "custom":
+            tts_voice = self.input_custom_voice.text().strip() or "zh-TW-HsiaoChenNeural"
+        tts_rate = f"{self.slider_rate.value():+d}%"
+        tts_pitch = f"{self.slider_pitch.value():+d}Hz"
+        tts_api_url = self.input_tts_url.text().strip()
+        tts_api_key = self.input_tts_key.text().strip()
+        tts_model = self.input_tts_model.text().strip()
+
         target_height = self.slider_height.value()
         tencent_secret_id = self.input_tencent_secret_id.text().strip()
         tencent_secret_key = self.input_tencent_secret_key.text().strip()
@@ -1083,8 +1282,15 @@ class SettingsWindow(QMainWindow):
             "comment_on_videos": comment_videos,
             "comment_on_work": comment_work,
             "enable_persistent_memory": enable_persistent_memory,
+            "antigravity_cli_path": antigravity_cli_path,
             "enable_tts": enable_tts,
+            "tts_engine": tts_engine,
             "tts_voice": tts_voice,
+            "tts_rate": tts_rate,
+            "tts_pitch": tts_pitch,
+            "tts_api_url": tts_api_url,
+            "tts_api_key": tts_api_key,
+            "tts_model": tts_model,
             "target_height": target_height,
             "pet_name": pet_name,
             "catchphrases": catchphrases,

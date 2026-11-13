@@ -49,10 +49,14 @@ class DesktopPetController(QObject):
         self.engine = GeminiCritiqueEngine()
         self.rate_limiter = CritiqueRateLimiter(cooldown_seconds=self.config_mgr.get("cooldown_seconds", 45))
         self.speaker = EdgeSpeaker(
-            voice=self.config_mgr.get("tts_voice", "zh-CN-XiaoyiNeural"),
-            rate=self.config_mgr.get("tts_rate", "+12%"),
-            pitch=self.config_mgr.get("tts_pitch", "+15Hz"),
-            enabled=self.config_mgr.get("enable_tts", True)
+            voice=self.config_mgr.get("tts_voice", "zh-TW-HsiaoChenNeural"),
+            rate=self.config_mgr.get("tts_rate", "+10%"),
+            pitch=self.config_mgr.get("tts_pitch", "+10Hz"),
+            enabled=self.config_mgr.get("enable_tts", True),
+            engine_type=self.config_mgr.get("tts_engine", "edge_tts"),
+            api_url=self.config_mgr.get("tts_api_url", ""),
+            api_key=self.config_mgr.get("tts_api_key", ""),
+            model=self.config_mgr.get("tts_model", "")
         )
 
         self.auto_mode = self.config_mgr.get("auto_mode", True)
@@ -131,8 +135,18 @@ class DesktopPetController(QObject):
         self.rate_limiter.cooldown_seconds = float(cfg.get("cooldown_seconds", 45))
 
         # Update TTS
-        self.speaker.enabled = cfg.get("enable_tts", True)
-        self.speaker.voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
+        self.speaker.update_config(
+            voice=cfg.get("tts_voice", "zh-TW-HsiaoChenNeural"),
+            rate=cfg.get("tts_rate", "+10%"),
+            pitch=cfg.get("tts_pitch", "+10Hz"),
+            enabled=cfg.get("enable_tts", True),
+            engine_type=cfg.get("tts_engine", "edge_tts"),
+            api_url=cfg.get("tts_api_url", ""),
+            api_key=cfg.get("tts_api_key", ""),
+            model=cfg.get("tts_model", "")
+        )
+        if hasattr(self.engine, "antigravity_helper"):
+            self.engine.antigravity_helper.reload()
 
         # Update Pet size & appearance
         new_height = int(cfg.get("target_height", 250))

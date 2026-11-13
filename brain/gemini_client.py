@@ -29,25 +29,62 @@ def is_valid_gemini_key(key: str) -> bool:
 
 class AntigravityEngineHelper:
     """Google Antigravity SDK & agy CLI 调度器 (直接消耗用户的 Antigravity 会员订阅算力)"""
-    def __init__(self, logger=None):
+    def __init__(self, config_mgr=None, logger=None):
+        self.config_mgr = config_mgr
         self.logger = logger
         self._agy_bin = self._find_agy_binary()
 
-    def _find_agy_binary(self) -> Optional[str]:
-        # 1. 检查环境变量 PATH
-        found = shutil.which("agy.exe") or shutil.which("agy")
-        if found and os.path.exists(found):
-            return found
-        # 2. 检查常见 Windows / macOS 用户目录
-        home_agy = os.path.expanduser("~/.gemini/bin/agy.exe")
-        if os.path.exists(home_agy):
-            return home_agy
-        agy_local = os.path.expanduser("~/AppData/Local/agy/bin/agy.exe")
-        if os.path.exists(agy_local):
-            return agy_local
-        local_agy = os.path.expanduser("~/AppData/Local/Programs/Antigravity/bin/agy.exe")
-        if os.path.exists(local_agy):
-            return local_agy
+    def reload(self):
+        self._agy_bin = self._find_agy_binary()
+
+    def _find_agy_binary(self, custom_path: Optional[str] = None) -> Optional[str]:
+        # 0. 优先检查显式传入或配置的自定义 CLI 路径
+        if custom_path and os.path.exists(custom_path.strip()):
+            return custom_path.strip()
+        if self.config_mgr:
+            cfg_p = (self.config_mgr.get("antigravity_cli_path") or "").strip()
+            if cfg_p and os.path.exists(cfg_p):
+                return cfg_p
+
+        # 1. 检查系统环境变量 PATH
+        for binary in ("agy.exe", "agy", "agy.cmd", "agy.bat", "antigravity.exe", "antigravity"):
+            found = shutil.which(binary)
+            if found and os.path.exists(found):
+                return found
+
+        # 2. Windows 常见安装与运行目录
+        win_candidates = [
+            os.path.expanduser("~/.gemini/bin/agy.exe"),
+            os.path.expanduser("~/.gemini/bin/agy.cmd"),
+            os.path.expanduser("~/.gemini/antigravity/bin/agy.exe"),
+            os.path.expanduser("~/.antigravity/bin/agy.exe"),
+            os.path.expanduser("~/AppData/Local/agy/bin/agy.exe"),
+            os.path.expanduser("~/AppData/Local/Programs/antigravity/resources/bin/agy.exe"),
+            os.path.expanduser("~/AppData/Local/Programs/antigravity/bin/agy.exe"),
+            os.path.expanduser("~/AppData/Local/Programs/Antigravity/bin/agy.exe"),
+            os.path.expanduser("~/AppData/Local/Programs/antigravity/Antigravity.exe"),
+            os.path.expanduser("~/AppData/Roaming/Antigravity/bin/agy-node.cmd"),
+            os.path.expanduser("~/AppData/Roaming/npm/agy.cmd"),
+            r"C:\Program Files\Antigravityingy.exe",
+            r"C:\Program Files\Google\Antigravityingy.exe",
+        ]
+
+        # 3. macOS 与 Linux 常见安装路径
+        posix_candidates = [
+            os.path.expanduser("~/.gemini/bin/agy"),
+            os.path.expanduser("~/.antigravity/bin/agy"),
+            "/usr/local/bin/agy",
+            "/opt/homebrew/bin/agy",
+            "/usr/bin/agy",
+            os.path.expanduser("~/.local/bin/agy"),
+            "/Applications/Antigravity.app/Contents/Resources/bin/agy",
+            "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+        ]
+
+        candidates = win_candidates if IS_WIN else (posix_candidates + win_candidates)
+        for p in candidates:
+            if p and os.path.exists(p):
+                return p
         return None
 
     def is_available(self) -> bool:
@@ -141,6 +178,10 @@ class AntigravityEngineHelper:
                     f.write(base64.b64decode(image_b64))
                 full_prompt += f"\n\n当前桌面截屏画面：@{temp_img_path}"
 
+            use_shell = False
+            if IS_WIN and self._agy_bin.lower().endswith((".cmd", ".bat")):
+                use_shell = True
+
             cmd = [
                 self._agy_bin,
                 "--print", full_prompt,
@@ -154,6 +195,7 @@ class AntigravityEngineHelper:
                 text=True,
                 timeout=timeout,
                 encoding="utf-8",
+                shell=use_shell,
                 creationflags=CREATE_NO_WINDOW
             )
             if r.returncode == 0:
@@ -373,7 +415,7 @@ class GeminiCritiqueEngine:
         self.context_memory = ContextMemoryManager()
         self.logger = get_log_manager()
         self.vertex_auth = VertexAuthHelper(logger=self.logger)
-        self.antigravity_helper = AntigravityEngineHelper(logger=self.logger)
+        self.antigravity_helper = AntigravityEngineHelper(config_mgr=self.config_mgr, logger=self.logger)
 
     @property
     def provider(self) -> str:
@@ -442,6 +484,7 @@ class GeminiCritiqueEngine:
         test_url = (custom_url or self.custom_url).strip()
 
         if test_prov in ("antigravity", "agy", "google_antigravity"):
+            self.antigravity_helper.reload()
             return self.antigravity_helper.test_connection(model=test_model)
 
         if test_prov in ("vertex_ai", "google_cloud", "gcp"):
@@ -678,8 +721,13 @@ class GeminiCritiqueEngine:
 
         gen_config = {
             "temperature": float(self.config_mgr.get("temperature", 0.88)),
-            "maxOutputTokens": 300
+            "maxOutputTokens": 2048
         }
+        # Flash / 3.8 / 2.5: set thinkingBudget to 0 for instant desk pet responses without truncating tokens
+        if "flash" in model.lower() or "2.5" in model or "3.8" in model:
+            gen_config["thinkingConfig"] = {
+                "thinkingBudget": 0
+            }
 
         payload = {
             "contents": [
@@ -763,7 +811,8 @@ class GeminiCritiqueEngine:
             },
             "generationConfig": {
                 "temperature": float(self.config_mgr.get("temperature", 0.88)),
-                "maxOutputTokens": 300
+                "maxOutputTokens": 2048,
+                "thinkingConfig": {"thinkingBudget": 0} if "flash" in self.model.lower() else {}
             }
         }
         headers = {"Content-Type": "application/json"}
@@ -833,7 +882,7 @@ class GeminiCritiqueEngine:
             "model": self.model,
             "messages": messages,
             "temperature": float(self.config_mgr.get("temperature", 0.88)),
-            "max_tokens": 300
+            "max_tokens": 1500
         }
 
         try:
