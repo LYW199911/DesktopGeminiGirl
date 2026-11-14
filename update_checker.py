@@ -4,6 +4,10 @@ import sys
 import threading
 import requests
 import webbrowser
+import zipfile
+import tempfile
+import subprocess
+import shutil
 from PyQt6.QtCore import QObject, pyqtSignal
 
 GITHUB_REPO_OWNER = "LYW199911"
@@ -32,6 +36,95 @@ def is_newer_version(current_ver: str, remote_ver: str) -> bool:
     curr = parse_version_tuple(current_ver)
     remote = parse_version_tuple(remote_ver)
     return remote > curr
+
+def extract_update_zip(zip_path: str, extract_dir: str) -> str:
+    """Extracts zip archive and returns the directory containing the executable payload."""
+    if os.path.exists(extract_dir):
+        shutil.rmtree(extract_dir, ignore_errors=True)
+    os.makedirs(extract_dir, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        zf.extractall(extract_dir)
+
+    # Search for folder directly containing the executable
+    for root, dirs, files in os.walk(extract_dir):
+        for f in files:
+            if f.endswith('.exe') or f in ('Ha-Gemi', 'Ha-Gemi-Dynamic'):
+                return root
+    return extract_dir
+
+def launch_auto_installer(src_dir: str, dst_dir: str, exe_name: str, pid: int = None) -> bool:
+    """Spawns an independent detached updater script to overwrite dst_dir from src_dir and restarts the app."""
+    if pid is None:
+        pid = os.getpid()
+
+    if sys.platform == "win32":
+        updater_dir = os.path.join(tempfile.gettempdir(), "HaGemi_Installer")
+        os.makedirs(updater_dir, exist_ok=True)
+        updater_bat = os.path.join(updater_dir, "hagemi_auto_updater.bat")
+
+        # Use GBK encoding for Windows CMD native compatibility
+        bat_script = f"""@echo off
+chcp 65001 >nul
+title 哈Gemi 自动更新安装程序
+echo [HaGemi Updater] 正在等待原程序 (PID: {pid}) 退出释放文件锁...
+
+:wait_loop
+tasklist /fi "PID eq {pid}" 2>nul | findstr "{pid}" >nul
+if %ERRORLEVEL%==0 (
+    timeout /t 1 /nobreak >nul
+    goto wait_loop
+)
+
+timeout /t 1 /nobreak >nul
+echo [HaGemi Updater] 正在自动安装并覆盖新版本文件...
+robocopy "{src_dir}" "{dst_dir}" /E /IS /IT /XF config.json memory.json >nul 2>&1
+
+echo [HaGemi Updater] 安装完成！正在重新唤醒哈Gemi...
+start "" "{dst_dir}\\{exe_name}"
+
+timeout /t 3 /nobreak >nul
+rd /s /q "{src_dir}" 2>nul
+(goto) 2>nul & del "%~f0"
+"""
+        try:
+            with open(updater_bat, "w", encoding="gbk", errors="ignore") as f:
+                f.write(bat_script)
+            subprocess.Popen(['cmd.exe', '/c', 'start', '/min', '', updater_bat], shell=False)
+            return True
+        except Exception as e:
+            print(f"[UpdateChecker] Launch Windows updater failed: {e}", flush=True)
+            return False
+
+    elif sys.platform == "darwin":
+        updater_sh = os.path.join(tempfile.gettempdir(), "hagemi_auto_updater.sh")
+        sh_script = f"""#!/bin/bash
+PID={pid}
+SRC="{src_dir}"
+DST="{dst_dir}"
+EXE="{exe_name}"
+
+while kill -0 "$PID" 2>/dev/null; do
+    sleep 1
+done
+sleep 1
+
+rsync -av --exclude="config.json" --exclude="memory.json" "$SRC/" "$DST/"
+open "$DST/$EXE" 2>/dev/null || "$DST/$EXE" &
+rm -rf "$SRC"
+rm -- "$0"
+"""
+        try:
+            with open(updater_sh, "w", encoding="utf-8") as f:
+                f.write(sh_script)
+            os.chmod(updater_sh, 0o755)
+            subprocess.Popen(["bash", updater_sh])
+            return True
+        except Exception as e:
+            print(f"[UpdateChecker] Launch macOS updater failed: {e}", flush=True)
+            return False
+
+    return False
 
 class UpdateChecker(QObject):
     check_finished = pyqtSignal(dict, bool, str)  # (release_data, is_newer, error_msg)

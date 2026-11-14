@@ -1,21 +1,34 @@
 import os
 import sys
 import webbrowser
+import tempfile
+import threading
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTextBrowser, QProgressBar, QFrame, QMessageBox, QApplication
 )
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QTimer
 from PyQt6.QtGui import QFont, QIcon
 
-from update_checker import UpdateChecker, GITHUB_REPO_OWNER, GITHUB_REPO_NAME
-from version import VERSION
+try:
+    from update_checker import (
+        UpdateChecker, GITHUB_REPO_OWNER, GITHUB_REPO_NAME,
+        extract_update_zip, launch_auto_installer
+    )
+    from version import VERSION
+except ImportError:
+    from gemini_desktop_pet.update_checker import (
+        UpdateChecker, GITHUB_REPO_OWNER, GITHUB_REPO_NAME,
+        extract_update_zip, launch_auto_installer
+    )
+    from gemini_desktop_pet.version import VERSION
 
 class UpdateDialog(QDialog):
     def __init__(self, is_dynamic: bool = False, parent=None):
         super().__init__(parent)
         self.is_dynamic = is_dynamic
         self.current_version = f"{VERSION}-dynamic" if is_dynamic else VERSION
+        self._is_auto_updating = False
         self.checker = UpdateChecker(current_version=VERSION, parent=self)
 
         self.setWindowTitle("哈Gemi · 检查更新与公告中心")
@@ -145,15 +158,21 @@ class UpdateDialog(QDialog):
 
         btn_bar.addStretch()
 
-        self.btn_open_web = QPushButton("🌐 前往 GitHub 发布页", self)
+        self.btn_open_web = QPushButton("🌐 GitHub 发布页", self)
         self.btn_open_web.setObjectName("SecondaryBtn")
         self.btn_open_web.clicked.connect(self._open_github_release)
         btn_bar.addWidget(self.btn_open_web)
 
-        self.btn_download = QPushButton("📥 一键直接下载新版", self)
+        self.btn_download = QPushButton("💾 仅下载安装包", self)
+        self.btn_download.setObjectName("SecondaryBtn")
         self.btn_download.clicked.connect(self._start_direct_download)
         self.btn_download.setEnabled(False)
         btn_bar.addWidget(self.btn_download)
+
+        self.btn_auto_update = QPushButton("⚡ 一键自动安装并重启", self)
+        self.btn_auto_update.clicked.connect(self._start_auto_update)
+        self.btn_auto_update.setEnabled(False)
+        btn_bar.addWidget(self.btn_auto_update)
 
         self.btn_close = QPushButton("关闭", self)
         self.btn_close.setObjectName("SecondaryBtn")
@@ -172,6 +191,7 @@ class UpdateDialog(QDialog):
         self.lbl_status.setText("正在连接 GitHub 检查最新版本与公告...")
         self.btn_check_again.setEnabled(False)
         self.btn_download.setEnabled(False)
+        self.btn_auto_update.setEnabled(False)
         self.checker.check_async()
 
     def _on_check_finished(self, data: dict, is_newer: bool, err_msg: str):
@@ -203,16 +223,23 @@ class UpdateDialog(QDialog):
         if not self.target_asset and data.get("assets"):
             self.target_asset = data["assets"][0]
 
+        target_display = "动态版" if self.is_dynamic else "经典版"
+        size_str = f" ({self.target_asset['size']/(1024*1024):.1f}MB)" if self.target_asset and 'size' in self.target_asset else ""
+
         if is_newer:
             self.lbl_status.setText(f"🎉 发现新版本: {remote_tag}！建议及时更新体验新特性~")
+            self.btn_auto_update.setEnabled(self.target_asset is not None)
             self.btn_download.setEnabled(self.target_asset is not None)
             if self.target_asset:
-                self.btn_download.setText(f"📥 下载最新 {target_keyword} 版 ({self.target_asset['size']/(1024*1024):.1f}MB)")
+                self.btn_auto_update.setText(f"⚡ 自动升级 {target_display}{size_str}")
+                self.btn_download.setText("💾 仅下载安装包")
         else:
             self.lbl_status.setText(f"✨ 当前已是最新版本 ({remote_tag}) 喵！以下为最新公告：")
+            self.btn_auto_update.setEnabled(self.target_asset is not None)
             self.btn_download.setEnabled(self.target_asset is not None)
             if self.target_asset:
-                self.btn_download.setText(f"📥 重新下载此版本安装包")
+                self.btn_auto_update.setText(f"⚡ 重新覆盖安装此版本")
+                self.btn_download.setText("💾 仅下载安装包")
 
         # Format markdown body to clean HTML
         html_body = self._markdown_to_html(body)
@@ -285,6 +312,25 @@ class UpdateDialog(QDialog):
         url = getattr(self, "release_url", f"https://github.com/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases")
         webbrowser.open(url)
 
+    def _start_auto_update(self):
+        if not self.target_asset:
+            self._open_github_release()
+            return
+
+        download_url = self.target_asset.get("browser_download_url")
+        filename = self.target_asset.get("name", "Ha-Gemi-Update.zip")
+        dest_dir = os.path.join(tempfile.gettempdir(), "HaGemi_AutoUpdate")
+
+        self._is_auto_updating = True
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.btn_auto_update.setEnabled(False)
+        self.btn_download.setEnabled(False)
+        self.btn_check_again.setEnabled(False)
+        self.lbl_status.setText(f"⏳ 正在下载最新升级包 ({filename})...")
+
+        self.checker.download_asset_async(download_url, dest_dir, filename)
+
     def _start_direct_download(self):
         if not self.target_asset:
             self._open_github_release()
@@ -294,9 +340,12 @@ class UpdateDialog(QDialog):
         filename = self.target_asset.get("name", "Ha-Gemi-Update.zip")
         dest_dir = os.path.expanduser("~/Downloads")
 
+        self._is_auto_updating = False
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
+        self.btn_auto_update.setEnabled(False)
         self.btn_download.setEnabled(False)
+        self.btn_check_again.setEnabled(False)
         self.lbl_status.setText(f"⏳ 正在下载 {filename} 到下载文件夹，请稍候...")
 
         self.checker.download_asset_async(download_url, dest_dir, filename)
@@ -306,24 +355,84 @@ class UpdateDialog(QDialog):
 
     def _on_download_finished(self, saved_path: str):
         self.progress_bar.setValue(100)
-        self.btn_download.setEnabled(True)
-        self.lbl_status.setText(f"🎉 下载完成！文件已存放在: {saved_path}")
 
-        reply = QMessageBox.information(
+        if not self._is_auto_updating:
+            self.btn_auto_update.setEnabled(True)
+            self.btn_download.setEnabled(True)
+            self.btn_check_again.setEnabled(True)
+            self.lbl_status.setText(f"🎉 下载完成！文件已存放在: {saved_path}")
+
+            reply = QMessageBox.information(
+                self,
+                "下载成功",
+                f"新版本压缩包已成功下载至您的【下载】文件夹！\n文件路径: {saved_path}\n\n是否立即打开所在文件夹查看？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                if sys.platform == "win32":
+                    os.system(f'explorer.exe /select,"{saved_path}"')
+                elif sys.platform == "darwin":
+                    os.system(f'open -R "{saved_path}"')
+            return
+
+        # Auto updater workflow
+        self.lbl_status.setText("📦 正在解压新版本并准备覆盖安装，请稍候...")
+
+        def worker_extract():
+            try:
+                extract_root = os.path.join(tempfile.gettempdir(), "HaGemi_Extracted")
+                src_dir = extract_update_zip(saved_path, extract_root)
+                QTimer.singleShot(0, lambda: self._on_extract_ready(src_dir))
+            except Exception as e:
+                err_msg = str(e)
+                QTimer.singleShot(0, lambda: self._on_extract_error(err_msg))
+
+        threading.Thread(target=worker_extract, daemon=True).start()
+
+    def _on_extract_ready(self, src_dir: str):
+        self.btn_auto_update.setEnabled(True)
+        self.btn_download.setEnabled(True)
+        self.btn_check_again.setEnabled(True)
+        self.lbl_status.setText("✅ 新版本已解压准备就绪！")
+
+        if getattr(sys, 'frozen', False):
+            dst_dir = os.path.dirname(sys.executable)
+            exe_name = os.path.basename(sys.executable)
+        else:
+            dst_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            exe_name = "Ha-Gemi-Dynamic.exe" if self.is_dynamic else "Ha-Gemi.exe"
+
+        reply = QMessageBox.question(
             self,
-            "下载成功",
-            f"新版本压缩包已成功下载至您的【下载】文件夹！\n文件路径: {saved_path}\n\n是否立即打开所在文件夹查看？",
+            "自动更新覆盖就绪",
+            "新版本已成功下载并解压就绪！✨\n\n"
+            "点击【确定】后，哈Gemi 将自动退出并执行覆盖升级，完成后会自动重新启动！\n"
+            "（您的个人配置 config.json 和记忆文件 memory.json 将被完好保留）\n\n"
+            "是否立即自动安装并重启？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes
         )
+
         if reply == QMessageBox.StandardButton.Yes:
-            if sys.platform == "win32":
-                os.system(f'explorer.exe /select,"{saved_path}"')
-            elif sys.platform == "darwin":
-                os.system(f'open -R "{saved_path}"')
+            success = launch_auto_installer(src_dir, dst_dir, exe_name)
+            if success:
+                QApplication.quit()
+                os._exit(0)
+            else:
+                QMessageBox.warning(self, "更新失败", "启动自动更新安装程序失败，请尝试手动解压更新。")
+
+    def _on_extract_error(self, err_msg: str):
+        self.btn_auto_update.setEnabled(True)
+        self.btn_download.setEnabled(True)
+        self.btn_check_again.setEnabled(True)
+        self.lbl_status.setText(f"❌ 解压安装包失败: {err_msg}")
+        QMessageBox.warning(self, "解压失败", f"解压新版本压缩包时出错: {err_msg}\n建议前往 GitHub 手动下载。")
 
     def _on_download_error(self, err_msg: str):
         self.progress_bar.setVisible(False)
+        self.btn_auto_update.setEnabled(True)
         self.btn_download.setEnabled(True)
+        self.btn_check_again.setEnabled(True)
         self.lbl_status.setText(f"❌ 下载中断: {err_msg}")
         QMessageBox.warning(self, "下载失败", f"无法直接下载该资产文件: {err_msg}\n\n建议点击【前往 GitHub 发布页】在浏览器中直接下载。")
