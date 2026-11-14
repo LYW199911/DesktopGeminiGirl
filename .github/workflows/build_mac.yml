@@ -1,0 +1,62 @@
+name: Build macOS Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Target Release Tag'
+        required: true
+        default: 'v1.5.3'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            display_arch: AppleSilicon
+          - os: macos-13
+            arch: x86_64
+            display_arch: Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+          pip3 install pyinstaller
+
+      - name: Build macOS Applications
+        run: |
+          chmod +x build_mac.sh
+          ./build_mac.sh
+
+      - name: Rename zip artifacts with architecture
+        run: |
+          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          cd dist
+          mv Ha-Gemi_Dynamic_macOS.zip "Ha-Gemi_Dynamic_${TAG}_macOS_${{ matrix.display_arch }}.zip"
+          mv Ha-Gemi_Classic_macOS.zip "Ha-Gemi_Classic_${TAG}_macOS_${{ matrix.display_arch }}.zip"
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          files: |
+            dist/Ha-Gemi_Dynamic_*_macOS_${{ matrix.display_arch }}.zip
+            dist/Ha-Gemi_Classic_*_macOS_${{ matrix.display_arch }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

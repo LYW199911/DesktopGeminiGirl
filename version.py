@@ -1,3 +1,3 @@
 # Version definition for Ha-Gemi Desktop Pet
-__version__ = "1.5.2"
+__version__ = "1.5.3"
 VERSION = f"v{__version__}"

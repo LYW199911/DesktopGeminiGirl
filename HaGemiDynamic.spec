@@ -4,6 +4,12 @@ import sys
 from PyInstaller.utils.hooks import collect_all
 
 BASE_DIR = os.path.abspath(SPECPATH)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+try:
+    from version import VERSION
+except Exception:
+    VERSION = "1.5.2"
 
 datas = [
     (os.path.join(BASE_DIR, 'assets'), 'assets'),
@@ -120,3 +126,25 @@ coll = COLLECT(
     upx_exclude=[],
     name='Ha-Gemi-Dynamic',
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='Ha-Gemi-Dynamic.app',
+        icon=icon_path,
+        bundle_identifier='com.lyw.hagemi.dynamic',
+        info_plist={
+            'CFBundleName': 'Ha-Gemi-Dynamic',
+            'CFBundleDisplayName': 'Ha-Gemi Dynamic',
+            'CFBundleIdentifier': 'com.lyw.hagemi.dynamic',
+            'CFBundleVersion': VERSION,
+            'CFBundleShortVersionString': VERSION,
+            'NSPrincipalClass': 'NSApplication',
+            'NSAppleScriptEnabled': False,
+            'NSHighResolutionCapable': True,
+            'NSSupportsAutomaticGraphicsSwitching': True,
+            'NSMicrophoneUsageDescription': '哈Gemi桌宠需要麦克风权限以支持语音互动与倾听。',
+            'NSScreenCaptureUsageDescription': '哈Gemi桌宠需要屏幕录制权限以识别当前屏幕内容并进行傲娇互动吐槽。',
+            'LSUIElement': False,
+        },
+    )

@@ -4,6 +4,12 @@ import sys
 from PyInstaller.utils.hooks import collect_all
 
 BASE_DIR = os.path.abspath(SPECPATH)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+try:
+    from version import VERSION
+except Exception:
+    VERSION = "1.5.2"
 
 datas = [
     (os.path.join(BASE_DIR, 'assets'), 'assets'),
@@ -129,8 +135,8 @@ if sys.platform == 'darwin':
             'CFBundleName': 'Ha-Gemi',
             'CFBundleDisplayName': 'Ha-Gemi',
             'CFBundleIdentifier': 'com.lyw.hagemi',
-            'CFBundleVersion': '1.4.2',
-            'CFBundleShortVersionString': '1.4.2',
+            'CFBundleVersion': VERSION,
+            'CFBundleShortVersionString': VERSION,
             'NSPrincipalClass': 'NSApplication',
             'NSAppleScriptEnabled': False,
             'NSHighResolutionCapable': True,
