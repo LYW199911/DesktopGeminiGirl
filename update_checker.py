@@ -63,11 +63,10 @@ def launch_auto_installer(src_dir: str, dst_dir: str, exe_name: str, pid: int = 
         os.makedirs(updater_dir, exist_ok=True)
         updater_bat = os.path.join(updater_dir, "hagemi_auto_updater.bat")
 
-        # Use GBK encoding for Windows CMD native compatibility
+        # Use clean ASCII for Windows CMD native compatibility across all system locales
         bat_script = f"""@echo off
-chcp 65001 >nul
-title 哈Gemi 自动更新安装程序
-echo [HaGemi Updater] 正在等待原程序 (PID: {pid}) 退出释放文件锁...
+title HaGemi Auto Updater
+echo [HaGemi Updater] Waiting for application (PID: {pid}) to exit...
 
 :wait_loop
 tasklist /fi "PID eq {pid}" 2>nul | findstr "{pid}" >nul
@@ -77,18 +76,18 @@ if %ERRORLEVEL%==0 (
 )
 
 timeout /t 1 /nobreak >nul
-echo [HaGemi Updater] 正在自动安装并覆盖新版本文件...
+echo [HaGemi Updater] Updating files...
 robocopy "{src_dir}" "{dst_dir}" /E /IS /IT /XF config.json memory.json >nul 2>&1
 
-echo [HaGemi Updater] 安装完成！正在重新唤醒哈Gemi...
-start "" "{dst_dir}\\{exe_name}"
+echo [HaGemi Updater] Restarting HaGemi...
+start "" /D "{dst_dir}" "{exe_name}"
 
-timeout /t 3 /nobreak >nul
+timeout /t 2 /nobreak >nul
 rd /s /q "{src_dir}" 2>nul
-(goto) 2>nul & del "%~f0"
+(goto) 2>nul & del "%~f0" & exit
 """
         try:
-            with open(updater_bat, "w", encoding="gbk", errors="ignore") as f:
+            with open(updater_bat, "w", encoding="ascii", errors="ignore") as f:
                 f.write(bat_script)
             subprocess.Popen(['cmd.exe', '/c', 'start', '/min', '', updater_bat], shell=False)
             return True
