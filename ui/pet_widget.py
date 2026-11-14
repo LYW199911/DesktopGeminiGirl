@@ -131,6 +131,20 @@ class DesktopPetWidget(QWidget):
     def _place_at_bottom_right(self):
         screen_obj = self.screen() or QApplication.primaryScreen()
         geom = screen_obj.availableGeometry() if screen_obj else None
+        saved_x = self.config_mgr.get("pet_pos_x", None)
+        saved_y = self.config_mgr.get("pet_pos_y", None)
+
+        if saved_x is not None and saved_y is not None and geom:
+            try:
+                sx, sy = int(saved_x), int(saved_y)
+                if geom.x() - 100 <= sx <= geom.x() + geom.width() - 50 and \
+                   geom.y() - 100 <= sy <= geom.y() + geom.height() - 50:
+                    self.move(sx, sy)
+                    print(f"[DesktopPet] Restored saved pet position at ({sx}, {sy})", flush=True)
+                    return
+            except (ValueError, TypeError):
+                pass
+
         if geom:
             x = geom.x() + geom.width() - self.width() - 80
             y = geom.y() + geom.height() - self.height() - 110
@@ -210,6 +224,14 @@ class DesktopPetWidget(QWidget):
                 dw = self.interaction_dialog.width()
                 dh = self.interaction_dialog.height()
                 self.interaction_dialog.move(new_pos.x() - dw + 45, new_pos.y() - dh - 10)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.config_mgr.save({
+                "pet_pos_x": self.x(),
+                "pet_pos_y": self.y()
+            })
             event.accept()
 
     def mouseDoubleClickEvent(self, event):

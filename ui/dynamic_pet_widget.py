@@ -66,7 +66,8 @@ class DynamicDesktopPetWidget(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        self.scale_factor = 0.52
+        target_h = int(self.config_mgr.get("target_height", 250))
+        self.scale_factor = max(0.35, min(0.85, target_h / 380.0))
         self.dynamic_fps = int(self.config_mgr.get("dynamic_fps", 15))
         self.playback_speed_multiplier = self.dynamic_fps / 12.0
         self.last_critique_text = ""
@@ -142,6 +143,19 @@ class DynamicDesktopPetWidget(QWidget):
     def _place_at_bottom_right(self):
         screen = self.screen() or QApplication.primaryScreen()
         geom = screen.availableGeometry() if screen else None
+        saved_x = self.config_mgr.get("pet_pos_x", None)
+        saved_y = self.config_mgr.get("pet_pos_y", None)
+
+        if saved_x is not None and saved_y is not None and geom:
+            try:
+                sx, sy = int(saved_x), int(saved_y)
+                if geom.x() - 100 <= sx <= geom.x() + geom.width() - 50 and \
+                   geom.y() - 100 <= sy <= geom.y() + geom.height() - 50:
+                    self.move(sx, sy)
+                    return
+            except (ValueError, TypeError):
+                pass
+
         if geom:
             x = geom.x() + geom.width() - self.width() - 80
             y = geom.y() + geom.height() - self.height() - 110
@@ -324,6 +338,11 @@ class DynamicDesktopPetWidget(QWidget):
             self.is_dragging = False
             self.velocity_x = 0.0
             self.set_action("idle")
+            # Save pet desktop coordinates on drag end
+            self.config_mgr.save({
+                "pet_pos_x": self.x(),
+                "pet_pos_y": self.y()
+            })
             event.accept()
 
     def mouseDoubleClickEvent(self, event):

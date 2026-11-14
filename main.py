@@ -461,7 +461,9 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
     # Pet & Tray & Settings
-    pet = DesktopPetWidget(target_height=250)
+    cfg_mgr = ConfigManager()
+    init_height = int(cfg_mgr.get("target_height", 250))
+    pet = DesktopPetWidget(target_height=init_height)
     tray = DesktopPetTray(icon_path=ICON_PATH)
     settings_win = SettingsWindow()
 
