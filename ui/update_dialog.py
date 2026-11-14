@@ -187,6 +187,8 @@ class UpdateDialog(QDialog):
         self.checker.download_progress.connect(self._on_download_progress)
         self.checker.download_finished.connect(self._on_download_finished)
         self.checker.download_error.connect(self._on_download_error)
+        self.checker.extract_finished.connect(self._on_extract_ready)
+        self.checker.extract_error.connect(self._on_extract_error)
 
     def check_update(self):
         self.lbl_status.setText("正在连接 GitHub 检查最新版本与公告...")
@@ -214,13 +216,26 @@ class UpdateDialog(QDialog):
         body = data.get("body", "暂无详细说明。")
         self.release_url = data.get("html_url", f"https://github.com/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases")
 
-        # Find matching asset for download
+        # Find matching asset for download based on platform and edition
         self.target_asset = None
-        target_keyword = "Dynamic" if self.is_dynamic else "Classic"
+        target_edition = "Dynamic" if self.is_dynamic else "Classic"
+        target_platform = "windows" if sys.platform == "win32" else "macos"
+
+        # 1. Match both edition and platform
         for asset in data.get("assets", []):
-            if target_keyword.lower() in asset.get("name", "").lower():
+            name_lower = asset.get("name", "").lower()
+            if target_edition.lower() in name_lower and target_platform in name_lower:
                 self.target_asset = asset
                 break
+
+        # 2. Match edition only if platform wasn't matched
+        if not self.target_asset:
+            for asset in data.get("assets", []):
+                name_lower = asset.get("name", "").lower()
+                if target_edition.lower() in name_lower:
+                    self.target_asset = asset
+                    break
+
         if not self.target_asset and data.get("assets"):
             self.target_asset = data["assets"][0]
 
@@ -380,17 +395,8 @@ class UpdateDialog(QDialog):
 
         # Auto updater workflow
         self.lbl_status.setText("📦 正在解压新版本并准备覆盖安装，请稍候...")
-
-        def worker_extract():
-            try:
-                extract_root = os.path.join(tempfile.gettempdir(), "HaGemi_Extracted")
-                src_dir = extract_update_zip(saved_path, extract_root)
-                QTimer.singleShot(0, lambda: self._on_extract_ready(src_dir))
-            except Exception as e:
-                err_msg = str(e)
-                QTimer.singleShot(0, lambda: self._on_extract_error(err_msg))
-
-        threading.Thread(target=worker_extract, daemon=True).start()
+        extract_root = os.path.join(tempfile.gettempdir(), "HaGemi_Extracted")
+        self.checker.extract_asset_async(saved_path, extract_root)
 
     def _on_extract_ready(self, src_dir: str):
         self.btn_auto_update.setEnabled(True)

@@ -131,6 +131,8 @@ class UpdateChecker(QObject):
     download_progress = pyqtSignal(int)          # 0 ~ 100
     download_finished = pyqtSignal(str)          # downloaded file path
     download_error = pyqtSignal(str)             # error message
+    extract_finished = pyqtSignal(str)           # extracted payload directory
+    extract_error = pyqtSignal(str)              # extraction error message
 
     def __init__(self, current_version: str = "v1.5.0", parent=None):
         super().__init__(parent)
@@ -200,5 +202,16 @@ class UpdateChecker(QObject):
             except Exception as e:
                 self.is_downloading = False
                 self.download_error.emit(str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def extract_asset_async(self, zip_path: str, extract_root: str):
+        """Asynchronously extracts zip package and emits extract_finished across threads safely."""
+        def worker():
+            try:
+                src_dir = extract_update_zip(zip_path, extract_root)
+                self.extract_finished.emit(src_dir)
+            except Exception as e:
+                self.extract_error.emit(str(e))
 
         threading.Thread(target=worker, daemon=True).start()
