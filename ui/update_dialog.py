@@ -29,6 +29,7 @@ class UpdateDialog(QDialog):
         self.is_dynamic = is_dynamic
         self.current_version = f"{VERSION}-dynamic" if is_dynamic else VERSION
         self._is_auto_updating = False
+        self._is_newer = False
         self.checker = UpdateChecker(current_version=VERSION, parent=self)
 
         self.setWindowTitle("哈Gemi · 检查更新与公告中心")
@@ -223,6 +224,7 @@ class UpdateDialog(QDialog):
         if not self.target_asset and data.get("assets"):
             self.target_asset = data["assets"][0]
 
+        self._is_newer = is_newer
         target_display = "动态版" if self.is_dynamic else "经典版"
         size_str = f" ({self.target_asset['size']/(1024*1024):.1f}MB)" if self.target_asset and 'size' in self.target_asset else ""
 
@@ -238,7 +240,7 @@ class UpdateDialog(QDialog):
             self.btn_auto_update.setEnabled(self.target_asset is not None)
             self.btn_download.setEnabled(self.target_asset is not None)
             if self.target_asset:
-                self.btn_auto_update.setText(f"⚡ 重新覆盖安装此版本")
+                self.btn_auto_update.setText(f"⚡ 一键重新安装并重启{size_str}")
                 self.btn_download.setText("💾 仅下载安装包")
 
         # Format markdown body to clean HTML
@@ -394,7 +396,7 @@ class UpdateDialog(QDialog):
         self.btn_auto_update.setEnabled(True)
         self.btn_download.setEnabled(True)
         self.btn_check_again.setEnabled(True)
-        self.lbl_status.setText("✅ 新版本已解压准备就绪！")
+        self.lbl_status.setText("✅ 安装包已解压准备就绪！")
 
         if getattr(sys, 'frozen', False):
             dst_dir = os.path.dirname(sys.executable)
@@ -403,13 +405,16 @@ class UpdateDialog(QDialog):
             dst_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             exe_name = "Ha-Gemi-Dynamic.exe" if self.is_dynamic else "Ha-Gemi.exe"
 
+        action_text = "覆盖升级" if self._is_newer else "重新安装"
+        title = "自动更新覆盖就绪" if self._is_newer else "重新安装覆盖就绪"
+
         reply = QMessageBox.question(
             self,
-            "自动更新覆盖就绪",
-            "新版本已成功下载并解压就绪！✨\n\n"
-            "点击【确定】后，哈Gemi 将自动退出并执行覆盖升级，完成后会自动重新启动！\n"
+            title,
+            f"安装包已成功下载并解压就绪！✨\n\n"
+            f"点击【确定】后，哈Gemi 将自动退出并执行{action_text}，完成后会自动重新启动！\n"
             "（您的个人配置 config.json 和记忆文件 memory.json 将被完好保留）\n\n"
-            "是否立即自动安装并重启？",
+            f"是否立即{action_text}并重启？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes
         )
