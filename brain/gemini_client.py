@@ -467,6 +467,13 @@ class GeminiCritiqueEngine:
     def vertex_credentials_file(self) -> str:
         return self.config_mgr.get("vertex_credentials_file", "").strip()
 
+    @property
+    def timeout(self) -> int:
+        try:
+            return max(5, int(self.config_mgr.get("api_timeout", 35)))
+        except (ValueError, TypeError):
+            return 35
+
     def test_connection(
         self,
         key: Optional[str] = None,
@@ -475,9 +482,11 @@ class GeminiCritiqueEngine:
         custom_url: Optional[str] = None,
         vertex_location: Optional[str] = None,
         vertex_project_id: Optional[str] = None,
-        vertex_creds_file: Optional[str] = None
+        vertex_creds_file: Optional[str] = None,
+        timeout: Optional[int] = None
     ) -> Tuple[bool, str]:
         """测试各渠道的算力可用性。"""
+        req_timeout = timeout or self.timeout
         test_prov = (provider or self.provider).strip().lower()
         test_key = key.strip() if key is not None else self.api_key
         test_model = (model or self.model).strip()
@@ -507,7 +516,7 @@ class GeminiCritiqueEngine:
                 "max_tokens": 5
             }
             try:
-                r = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+                r = requests.post(endpoint, json=payload, headers=headers, timeout=req_timeout)
                 if r.status_code == 200:
                     return True, f"连接成功！{test_model} 算力响应正常。"
                 else:
@@ -546,7 +555,7 @@ class GeminiCritiqueEngine:
                 "generationConfig": {"maxOutputTokens": 10}
             }
             try:
-                r = requests.post(url, json=payload, headers=headers, timeout=12)
+                r = requests.post(url, json=payload, headers=headers, timeout=req_timeout)
                 if r.status_code == 200:
                     return True, f"连接成功！Google Cloud Vertex AI ({test_model}) [项目: {resolved_proj}, 区域: {loc}] 响应正常！"
                 else:
@@ -583,7 +592,7 @@ class GeminiCritiqueEngine:
                 ]
             }
             try:
-                r = requests.post(url, json=payload, headers=headers, timeout=25)
+                r = requests.post(url, json=payload, headers=headers, timeout=req_timeout)
                 if r.status_code == 200:
                     return True, f"连接成功！Google Gemini ({test_model}) 算力响应正常。"
                 elif r.status_code == 404:
@@ -691,7 +700,8 @@ class GeminiCritiqueEngine:
                 sys_prompt=sys_prompt,
                 user_prompt=user_prompt,
                 image_b64=image_b64,
-                model=self.model or "gemini-3.8-flash-high"
+                model=self.model or "gemini-3.8-flash-high",
+                timeout=max(self.timeout, 60)
             )
             if text:
                 text = text.replace('"', '').replace('“', '').replace('”', '').strip()
@@ -749,7 +759,7 @@ class GeminiCritiqueEngine:
         }
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=25)
+            resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
             if resp.status_code == 200:
                 result = resp.json()
                 candidates = result.get("candidates", [])
@@ -766,6 +776,9 @@ class GeminiCritiqueEngine:
             else:
                 print(f"[GeminiEngine] API Error {resp.status_code}: {resp.text}", flush=True)
                 return "[relieved] 喵呜！网络信号刚才抖了一下，算力连接稍有延迟喵~"
+        except requests.exceptions.Timeout:
+            print(f"[GeminiEngine] API Timeout ({self.timeout}s)", flush=True)
+            return f"[relieved] 喵呜~API 请求连接超时了({self.timeout}秒)，可在设置中心将超时时间调大试试喵！"
         except Exception as e:
             print(f"[GeminiEngine] Request failed: {e}", flush=True)
             return f"[relieved] 喵呜~刚才星轨通讯受到干扰，本{pet_name}正在重新调谐天线！"
@@ -822,7 +835,7 @@ class GeminiCritiqueEngine:
             headers["x-goog-api-key"] = auth_key
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=15)
+            resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
             if resp.status_code == 200:
                 result = resp.json()
                 candidates = result.get("candidates", [])
@@ -844,10 +857,14 @@ class GeminiCritiqueEngine:
                 elif resp.status_code == 404:
                     return f"[relieved] 喵呜！模型 {self.model} 在区域 {loc} 未找到 (404)，推荐将区域设为 global 试试喵~"
                 return f"[relieved] 喵呜！Vertex API 返回了错误 ({resp.status_code})，快去日志查看详情喵~"
+        except requests.exceptions.Timeout:
+            print(f"[VertexEngine] Request timeout ({self.timeout}s)", flush=True)
+            self.logger.error(f"Vertex AI 网络请求超时 ({self.timeout}秒)")
+            return f"[relieved] 喵呜~Vertex 云端连接超时啦({self.timeout}秒)，可在控制台把超时时间改大一点喵！"
         except Exception as e:
             print(f"[VertexEngine] Request failed: {e}", flush=True)
             self.logger.error(f"Vertex AI 网络请求异常: {e}")
-            return f"[relieved] 喵呜~Vertex 云端连接超时，请检查网络或区域配置喵！"
+            return f"[relieved] 喵呜~Vertex 云端连接超时或网络受阻，请检查网络配置喵！"
 
     def _call_openai_compatible(self, sys_prompt: str, user_prompt: str, image_b64: Optional[str], pet_name: str) -> str:
         base = self.custom_url.rstrip("/")
@@ -886,7 +903,7 @@ class GeminiCritiqueEngine:
         }
 
         try:
-            resp = requests.post(endpoint, json=payload, headers=headers, timeout=15)
+            resp = requests.post(endpoint, json=payload, headers=headers, timeout=self.timeout)
             if resp.status_code == 200:
                 result = resp.json()
                 choices = result.get("choices", [])
@@ -898,6 +915,9 @@ class GeminiCritiqueEngine:
             else:
                 print(f"[OpenAIEngine] API Error {resp.status_code}: {resp.text}", flush=True)
                 return f"[relieved] 喵呜！API 服务端返回了错误 ({resp.status_code})，快检查下模型和密钥喵~"
+        except requests.exceptions.Timeout:
+            print(f"[OpenAIEngine] Request timeout ({self.timeout}s)", flush=True)
+            return f"[relieved] 喵呜~自定义 API 连接超时了({self.timeout}秒)，可在控制台把超时时间改大一点喵！"
         except Exception as e:
             print(f"[OpenAIEngine] Request failed: {e}", flush=True)
-            return f"[relieved] 喵呜~自定义 API 连接超时了，请检查网络或 URL 喵！"
+            return f"[relieved] 喵呜~网络连接异常，请检查 API 接口配置喵！"

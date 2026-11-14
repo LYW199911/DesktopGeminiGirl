@@ -366,11 +366,38 @@ class SettingsWindow(QMainWindow):
         self.combo_model.setEditable(True)
         box_api_l.addWidget(self.combo_model, 6, 1, 1, 3)
 
+        # API Timeout Setting
+        box_api_l.addWidget(QLabel("请求超时时间 (Timeout):"), 7, 0)
+        timeout_h = QHBoxLayout()
+        timeout_h.setSpacing(8)
+
+        self.spin_timeout = QSpinBox()
+        self.spin_timeout.setRange(5, 600)
+        self.spin_timeout.setValue(35)
+        self.spin_timeout.setSuffix(" 秒")
+        self.spin_timeout.setFixedWidth(110)
+        self.spin_timeout.setToolTip("输入 API 请求的最大等待时间（秒）。默认推荐 35 秒。")
+        timeout_h.addWidget(self.spin_timeout)
+
+        self.btn_reset_timeout = QPushButton("恢复默认 (35秒)")
+        self.btn_reset_timeout.setObjectName("SecondaryBtn")
+        self.btn_reset_timeout.setFixedWidth(120)
+        self.btn_reset_timeout.setToolTip("将请求超时时间快速重置为官方推荐默认值 35 秒")
+        self.btn_reset_timeout.clicked.connect(lambda: self.spin_timeout.setValue(35))
+        timeout_h.addWidget(self.btn_reset_timeout)
+
+        lbl_timeout_desc = QLabel("💡 默认参考值: 35秒；中转站/代理网络慢或使用思考大模型 (如 gemini-4-argon) 建议设为 60~120秒")
+        lbl_timeout_desc.setStyleSheet("color: #a49cb8; font-size: 11px;")
+        timeout_h.addWidget(lbl_timeout_desc)
+        timeout_h.addStretch()
+
+        box_api_l.addLayout(timeout_h, 7, 1, 1, 3)
+
         # Vertex Tips Hint
         self.lbl_vertex_hint = QLabel("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-3.8-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
         self.lbl_vertex_hint.setWordWrap(True)
         self.lbl_vertex_hint.setStyleSheet("color: #ff99bb; font-size: 11px;")
-        box_api_l.addWidget(self.lbl_vertex_hint, 7, 0, 1, 4)
+        box_api_l.addWidget(self.lbl_vertex_hint, 8, 0, 1, 4)
 
         layout.addWidget(box_api)
 
@@ -387,10 +414,28 @@ class SettingsWindow(QMainWindow):
         self.input_tencent_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_tencent_secret_key.setPlaceholderText("腾讯云 API 密钥管理中的 SecretKey")
         box_asr_l.addWidget(self.input_tencent_secret_key, 1, 1, 1, 3)
+
+        # Tencent Cloud console link and copy button
+        tencent_link_h = QHBoxLayout()
+        lbl_tencent_url = QLabel("🔗 腾讯云密钥控制台: <a href='https://console.cloud.tencent.com/cam/capi' style='color:#ff7aa6;'>https://console.cloud.tencent.com/cam/capi</a>")
+        lbl_tencent_url.setOpenExternalLinks(True)
+        lbl_tencent_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        tencent_link_h.addWidget(lbl_tencent_url)
+
+        btn_copy_tencent = QPushButton("复制网址")
+        btn_copy_tencent.setObjectName("SecondaryBtn")
+        btn_copy_tencent.setFixedWidth(85)
+        btn_copy_tencent.setToolTip("点击一键复制腾讯云 API 密钥控制台链接")
+        btn_copy_tencent.clicked.connect(lambda: QApplication.clipboard().setText("https://console.cloud.tencent.com/cam/capi"))
+        tencent_link_h.addWidget(btn_copy_tencent)
+        tencent_link_h.addStretch()
+
+        box_asr_l.addLayout(tencent_link_h, 2, 0, 1, 4)
+
         asr_hint = QLabel("按 Ctrl+F1 开始/结束录音；停止后自动识别并发送。录音最长 55 秒，音频仅暂存在内存并发送给腾讯云，不写入本地文件。")
         asr_hint.setWordWrap(True)
         asr_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
-        box_asr_l.addWidget(asr_hint, 2, 0, 1, 4)
+        box_asr_l.addWidget(asr_hint, 3, 0, 1, 4)
         layout.addWidget(box_asr)
 
         # 2. Perception & Autostart Box
@@ -785,6 +830,7 @@ class SettingsWindow(QMainWindow):
 
             self.input_key.setText(cfg.get("api_key", ""))
             self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
+            self.spin_timeout.setValue(int(cfg.get("api_timeout", 35)))
             self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
             self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
@@ -1152,7 +1198,8 @@ class SettingsWindow(QMainWindow):
             custom_url=custom_url,
             vertex_location=vertex_loc,
             vertex_project_id=vertex_proj,
-            vertex_creds_file=vertex_creds
+            vertex_creds_file=vertex_creds,
+            timeout=self.spin_timeout.value()
         )
         if ok:
             QMessageBox.information(self, "连接成功", msg)
@@ -1297,6 +1344,7 @@ class SettingsWindow(QMainWindow):
         tts_model = self.input_tts_model.text().strip()
 
         target_height = self.slider_height.value()
+        api_timeout = self.spin_timeout.value()
         tencent_secret_id = self.input_tencent_secret_id.text().strip()
         tencent_secret_key = self.input_tencent_secret_key.text().strip()
 
@@ -1320,6 +1368,7 @@ class SettingsWindow(QMainWindow):
             "vertex_location": vertex_location,
             "vertex_credentials_file": vertex_credentials_file,
             "model": model,
+            "api_timeout": api_timeout,
             "tencent_secret_id": tencent_secret_id,
             "tencent_secret_key": tencent_secret_key,
             "auto_mode": auto_mode,

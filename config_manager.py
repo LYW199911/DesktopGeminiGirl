@@ -29,6 +29,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "antigravity_cli_path": "",
     "tencent_secret_id": "",
     "tencent_secret_key": "",
+    "api_timeout": 35,
     "temperature": 0.88,
     "cooldown_seconds": 45,
     "enable_tts": True,
