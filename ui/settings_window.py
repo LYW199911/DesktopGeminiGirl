@@ -55,6 +55,19 @@ TTS_VOICES = [
     ("custom", "自定义 (在下方输入 Edge-TTS 音色代码)")
 ]
 
+GEMINI_TTS_VOICES = [
+    ("Aoede", "Aoede (傲娇/萌系少女音 · 官方推荐匹配哈Gemi)"),
+    ("Kore", "Kore (知性温柔清澈少女)"),
+    ("Puck", "Puck (元气活力少年/正太)"),
+    ("Fenrir", "Fenrir (沉稳磁性男声)"),
+    ("Charon", "Charon (冷静克制男声)"),
+]
+
+GEMINI_TTS_MODELS = [
+    ("gemini-3.8-flash-tts", "gemini-3.8-flash-tts (高拟真端到端 · 官方推荐)"),
+    ("gemini-3.8-flash-lite-tts", "gemini-3.8-flash-lite-tts (极速低延迟轻量版)"),
+]
+
 class SettingsWindow(QMainWindow):
     settings_applied = pyqtSignal()
     request_manual_critique = pyqtSignal()
@@ -490,11 +503,12 @@ class SettingsWindow(QMainWindow):
         box_voice_l.addWidget(QLabel("语音引擎类型:"), 1, 0)
         self.combo_tts_engine = QComboBox()
         self.combo_tts_engine.addItem("Edge-TTS (微软云端神经网络 / 免费免配置)", "edge_tts")
+        self.combo_tts_engine.addItem("Gemini 3.8 Flash TTS (Google 官方拟真创意音色 · 极速)", "gemini_tts")
         self.combo_tts_engine.addItem("自定义兼容接口 (GPT-SoVITS / CosyVoice / Fish Audio / OpenAI)", "openai_tts")
         self.combo_tts_engine.currentIndexChanged.connect(self._on_tts_engine_changed)
         box_voice_l.addWidget(self.combo_tts_engine, 1, 1, 1, 2)
 
-        # Edge-TTS Voice options
+        # Voice options (populated dynamically based on engine)
         self.lbl_voice_choice = QLabel("语音音色:")
         box_voice_l.addWidget(self.lbl_voice_choice, 2, 0)
         self.combo_voice = QComboBox()
@@ -508,16 +522,24 @@ class SettingsWindow(QMainWindow):
         self.btn_test_tts.clicked.connect(self._test_voice)
         box_voice_l.addWidget(self.btn_test_tts, 2, 2)
 
+        # Gemini-TTS Model options
+        self.lbl_gemini_model = QLabel("Gemini TTS 模型:")
+        self.combo_gemini_model = QComboBox()
+        for m_id, label in GEMINI_TTS_MODELS:
+            self.combo_gemini_model.addItem(label, m_id)
+        box_voice_l.addWidget(self.lbl_gemini_model, 3, 0)
+        box_voice_l.addWidget(self.combo_gemini_model, 3, 1, 1, 2)
+
         # Custom Edge-TTS input
         self.lbl_custom_voice = QLabel("自定义音色代码:")
         self.input_custom_voice = QLineEdit()
         self.input_custom_voice.setPlaceholderText("例如: zh-TW-HsiaoChenNeural 或 ja-JP-NanamiNeural")
-        box_voice_l.addWidget(self.lbl_custom_voice, 3, 0)
-        box_voice_l.addWidget(self.input_custom_voice, 3, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_custom_voice, 4, 0)
+        box_voice_l.addWidget(self.input_custom_voice, 4, 1, 1, 2)
 
         # Rate slider
         self.lbl_rate = QLabel("语音语速:")
-        box_voice_l.addWidget(self.lbl_rate, 4, 0)
+        box_voice_l.addWidget(self.lbl_rate, 5, 0)
         rate_box = QHBoxLayout()
         self.slider_rate = QSlider(Qt.Orientation.Horizontal)
         self.slider_rate.setRange(-30, 50)
@@ -526,11 +548,11 @@ class SettingsWindow(QMainWindow):
         self.slider_rate.valueChanged.connect(lambda v: self.lbl_rate_val.setText(f"{v:+d}%"))
         rate_box.addWidget(self.slider_rate)
         rate_box.addWidget(self.lbl_rate_val)
-        box_voice_l.addLayout(rate_box, 4, 1, 1, 2)
+        box_voice_l.addLayout(rate_box, 5, 1, 1, 2)
 
         # Pitch slider
         self.lbl_pitch = QLabel("语音语调 (音高):")
-        box_voice_l.addWidget(self.lbl_pitch, 5, 0)
+        box_voice_l.addWidget(self.lbl_pitch, 6, 0)
         pitch_box = QHBoxLayout()
         self.slider_pitch = QSlider(Qt.Orientation.Horizontal)
         self.slider_pitch.setRange(-20, 30)
@@ -539,29 +561,33 @@ class SettingsWindow(QMainWindow):
         self.slider_pitch.valueChanged.connect(lambda v: self.lbl_pitch_val.setText(f"{v:+d}Hz"))
         pitch_box.addWidget(self.slider_pitch)
         pitch_box.addWidget(self.lbl_pitch_val)
-        box_voice_l.addLayout(pitch_box, 5, 1, 1, 2)
+        box_voice_l.addLayout(pitch_box, 6, 1, 1, 2)
 
         # Custom TTS API fields (OpenAI / GPT-SoVITS)
         self.lbl_tts_url = QLabel("TTS API 接口地址:")
         self.input_tts_url = QLineEdit()
         self.input_tts_url.setPlaceholderText("例如: http://127.0.0.1:9880/v1/audio/speech 或 http://localhost:5000/tts")
-        box_voice_l.addWidget(self.lbl_tts_url, 6, 0)
-        box_voice_l.addWidget(self.input_tts_url, 6, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_tts_url, 7, 0)
+        box_voice_l.addWidget(self.input_tts_url, 7, 1, 1, 2)
 
         self.lbl_tts_key = QLabel("TTS API Key (可选):")
         self.input_tts_key = QLineEdit()
         self.input_tts_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_tts_key.setPlaceholderText("本地服务通常留空；第三方服务填入 Key")
-        box_voice_l.addWidget(self.lbl_tts_key, 7, 0)
-        box_voice_l.addWidget(self.input_tts_key, 7, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_tts_key, 8, 0)
+        box_voice_l.addWidget(self.input_tts_key, 8, 1, 1, 2)
 
         self.lbl_tts_model = QLabel("TTS 模型/音色 (可选):")
         self.input_tts_model = QLineEdit()
         self.input_tts_model.setPlaceholderText("例如: default / tts-1 / cosyvoice")
-        box_voice_l.addWidget(self.lbl_tts_model, 8, 0)
-        box_voice_l.addWidget(self.input_tts_model, 8, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_tts_model, 9, 0)
+        box_voice_l.addWidget(self.input_tts_model, 9, 1, 1, 2)
 
-        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 9, 0)
+        self.lbl_gemini_hint = QLabel("💡 提示: 自动复用上方配置的 Gemini API Key，采用 Google 最新端到端原生拟真音色！")
+        self.lbl_gemini_hint.setStyleSheet("color: #ff94ba; font-size: 11px;")
+        box_voice_l.addWidget(self.lbl_gemini_hint, 10, 0, 1, 3)
+
+        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 11, 0)
         size_box = QHBoxLayout()
         self.slider_height = QSlider(Qt.Orientation.Horizontal)
         self.slider_height.setRange(160, 380)
@@ -569,10 +595,10 @@ class SettingsWindow(QMainWindow):
         self.slider_height.valueChanged.connect(lambda v: self.lbl_height_val.setText(f"{v} px"))
         size_box.addWidget(self.slider_height)
         size_box.addWidget(self.lbl_height_val)
-        box_voice_l.addLayout(size_box, 9, 1, 1, 2)
+        box_voice_l.addLayout(size_box, 11, 1, 1, 2)
 
         if self.is_dynamic:
-            box_voice_l.addWidget(QLabel("动态立绘帧率调整:"), 10, 0)
+            box_voice_l.addWidget(QLabel("动态立绘帧率调整:"), 12, 0)
             fps_box = QHBoxLayout()
             self.slider_fps = QSlider(Qt.Orientation.Horizontal)
             self.slider_fps.setRange(8, 24)
@@ -849,22 +875,34 @@ class SettingsWindow(QMainWindow):
 
             self.chk_tts.setChecked(cfg.get("enable_tts", True))
             tts_engine = cfg.get("tts_engine", "edge_tts")
+            self._saved_edge_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
+            self._saved_gemini_voice = cfg.get("gemini_tts_voice", "Aoede")
+
+            gemini_model = cfg.get("gemini_tts_model", "gemini-3.8-flash-tts")
+            gm_idx = self.combo_gemini_model.findData(gemini_model)
+            if gm_idx >= 0:
+                self.combo_gemini_model.setCurrentIndex(gm_idx)
+
             e_idx = self.combo_tts_engine.findData(tts_engine)
             if e_idx >= 0:
                 self.combo_tts_engine.setCurrentIndex(e_idx)
+            else:
+                self.combo_tts_engine.setCurrentIndex(0)
 
-            current_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
-            voice_found = False
-            for i in range(self.combo_voice.count()):
-                if self.combo_voice.itemData(i) == current_voice:
-                    self.combo_voice.setCurrentIndex(i)
-                    voice_found = True
-                    break
-            if not voice_found:
-                c_idx = self.combo_voice.findData("custom")
-                if c_idx >= 0:
-                    self.combo_voice.setCurrentIndex(c_idx)
-                self.input_custom_voice.setText(current_voice)
+            self._on_tts_engine_changed()
+
+            if tts_engine == "edge_tts":
+                voice_found = False
+                for i in range(self.combo_voice.count()):
+                    if self.combo_voice.itemData(i) == self._saved_edge_voice:
+                        self.combo_voice.setCurrentIndex(i)
+                        voice_found = True
+                        break
+                if not voice_found:
+                    c_idx = self.combo_voice.findData("custom")
+                    if c_idx >= 0:
+                        self.combo_voice.setCurrentIndex(c_idx)
+                    self.input_custom_voice.setText(self._saved_edge_voice)
 
             # Parse rate (e.g. "+12%" -> 12)
             try:
@@ -974,9 +1012,46 @@ class SettingsWindow(QMainWindow):
     def _on_tts_engine_changed(self):
         engine = self.combo_tts_engine.currentData() or "edge_tts"
         is_edge = (engine == "edge_tts")
+        is_gemini = (engine == "gemini_tts")
+        is_openai = (engine == "openai_tts")
 
-        self.lbl_voice_choice.setVisible(is_edge)
-        self.combo_voice.setVisible(is_edge)
+        # Repopulate voice combobox if switching between edge and gemini
+        self.combo_voice.blockSignals(True)
+        self.combo_voice.clear()
+
+        if is_gemini:
+            self.lbl_voice_choice.setText("Gemini 音色:")
+            for v_id, label in GEMINI_TTS_VOICES:
+                self.combo_voice.addItem(label, v_id)
+            g_voice = getattr(self, "_saved_gemini_voice", "Aoede")
+            idx = self.combo_voice.findData(g_voice)
+            self.combo_voice.setCurrentIndex(idx if idx >= 0 else 0)
+        elif is_edge:
+            self.lbl_voice_choice.setText("语音音色:")
+            for v_id, label in TTS_VOICES:
+                self.combo_voice.addItem(label, v_id)
+            e_voice = getattr(self, "_saved_edge_voice", "zh-CN-XiaoyiNeural")
+            idx = self.combo_voice.findData(e_voice)
+            self.combo_voice.setCurrentIndex(idx if idx >= 0 else 0)
+        else:
+            self.lbl_voice_choice.setText("语音音色 (可选):")
+            self.combo_voice.addItem("默认音色 (default)", "default")
+            self.combo_voice.setCurrentIndex(0)
+        self.combo_voice.blockSignals(False)
+
+        # Visibility controls
+        self.lbl_voice_choice.setVisible(not is_openai)
+        self.combo_voice.setVisible(not is_openai)
+        self.btn_test_tts.setVisible(True)
+
+        is_custom_voice = (is_edge and self.combo_voice.currentData() == "custom")
+        self.lbl_custom_voice.setVisible(is_custom_voice)
+        self.input_custom_voice.setVisible(is_custom_voice)
+
+        self.lbl_gemini_model.setVisible(is_gemini)
+        self.combo_gemini_model.setVisible(is_gemini)
+        self.lbl_gemini_hint.setVisible(is_gemini)
+
         self.lbl_rate.setVisible(is_edge)
         self.slider_rate.setVisible(is_edge)
         self.lbl_rate_val.setVisible(is_edge)
@@ -984,19 +1059,22 @@ class SettingsWindow(QMainWindow):
         self.slider_pitch.setVisible(is_edge)
         self.lbl_pitch_val.setVisible(is_edge)
 
-        is_custom_voice = (is_edge and self.combo_voice.currentData() == "custom")
-        self.lbl_custom_voice.setVisible(is_custom_voice)
-        self.input_custom_voice.setVisible(is_custom_voice)
-
-        self.lbl_tts_url.setVisible(not is_edge)
-        self.input_tts_url.setVisible(not is_edge)
-        self.lbl_tts_key.setVisible(not is_edge)
-        self.input_tts_key.setVisible(not is_edge)
-        self.lbl_tts_model.setVisible(not is_edge)
-        self.input_tts_model.setVisible(not is_edge)
+        self.lbl_tts_url.setVisible(is_openai)
+        self.input_tts_url.setVisible(is_openai)
+        self.lbl_tts_key.setVisible(is_openai)
+        self.input_tts_key.setVisible(is_openai)
+        self.lbl_tts_model.setVisible(is_openai)
+        self.input_tts_model.setVisible(is_openai)
 
     def _on_voice_changed(self):
-        is_custom = (self.combo_voice.currentData() == "custom")
+        engine = self.combo_tts_engine.currentData() or "edge_tts"
+        cur = self.combo_voice.currentData()
+        if engine == "gemini_tts" and cur:
+            self._saved_gemini_voice = cur
+        elif engine == "edge_tts" and cur:
+            self._saved_edge_voice = cur
+
+        is_custom = (engine == "edge_tts" and cur == "custom")
         self.lbl_custom_voice.setVisible(is_custom)
         self.input_custom_voice.setVisible(is_custom)
 
@@ -1220,6 +1298,15 @@ class SettingsWindow(QMainWindow):
         api_key = self.input_tts_key.text().strip()
         model = self.input_tts_model.text().strip()
 
+        gemini_key = self.input_key.text().strip()
+        if gemini_key.startswith("✅ 已自动识别"):
+            gemini_key = self.config_mgr.get("api_key", "")
+        if not gemini_key:
+            gemini_key = self.config_mgr.get("api_key", "")
+
+        gemini_model = self.combo_gemini_model.currentData() or "gemini-3.8-flash-tts"
+        gemini_voice = voice if engine_type == "gemini_tts" else getattr(self, "_saved_gemini_voice", "Aoede")
+
         from tts.edge_speaker import EdgeSpeaker
         speaker = EdgeSpeaker(
             voice=voice,
@@ -1229,10 +1316,16 @@ class SettingsWindow(QMainWindow):
             engine_type=engine_type,
             api_url=api_url,
             api_key=api_key,
-            model=model
+            model=model,
+            gemini_api_key=gemini_key,
+            gemini_voice=gemini_voice,
+            gemini_model=gemini_model
         )
         name = self.input_name.text().strip() or "哈Gemi"
-        speaker.speak_async(f"主人你好呀！我是你的桌面专属猫娘{name}喵~")
+        if engine_type == "gemini_tts":
+            speaker.speak_async(f"主人你好呀！我是{name}，这是Google官方Gemini 3.8 Flash TTS拟真少女音色哦，听起来怎么样喵~")
+        else:
+            speaker.speak_async(f"主人你好呀！我是你的桌面专属猫娘{name}喵~")
 
     def _open_log_file(self):
         log_f = getattr(self.logger, "log_file", "")
@@ -1334,9 +1427,21 @@ class SettingsWindow(QMainWindow):
 
         enable_tts = self.chk_tts.isChecked()
         tts_engine = self.combo_tts_engine.currentData() or "edge_tts"
-        tts_voice = self.combo_voice.currentData()
-        if tts_voice == "custom":
-            tts_voice = self.input_custom_voice.text().strip() or "zh-CN-XiaoyiNeural"
+        if tts_engine == "gemini_tts":
+            gemini_tts_voice = self.combo_voice.currentData() or "Aoede"
+            gemini_tts_model = self.combo_gemini_model.currentData() or "gemini-3.8-flash-tts"
+            tts_voice = getattr(self, "_saved_edge_voice", "zh-CN-XiaoyiNeural")
+        elif tts_engine == "edge_tts":
+            tts_voice = self.combo_voice.currentData()
+            if tts_voice == "custom":
+                tts_voice = self.input_custom_voice.text().strip() or "zh-CN-XiaoyiNeural"
+            gemini_tts_voice = getattr(self, "_saved_gemini_voice", "Aoede")
+            gemini_tts_model = self.combo_gemini_model.currentData() or "gemini-3.8-flash-tts"
+        else:
+            tts_voice = self.combo_voice.currentData() or "default"
+            gemini_tts_voice = getattr(self, "_saved_gemini_voice", "Aoede")
+            gemini_tts_model = self.combo_gemini_model.currentData() or "gemini-3.8-flash-tts"
+
         tts_rate = f"{self.slider_rate.value():+d}%"
         tts_pitch = f"{self.slider_pitch.value():+d}Hz"
         tts_api_url = self.input_tts_url.text().strip()
@@ -1382,6 +1487,8 @@ class SettingsWindow(QMainWindow):
             "enable_tts": enable_tts,
             "tts_engine": tts_engine,
             "tts_voice": tts_voice,
+            "gemini_tts_voice": gemini_tts_voice,
+            "gemini_tts_model": gemini_tts_model,
             "tts_rate": tts_rate,
             "tts_pitch": tts_pitch,
             "tts_api_url": tts_api_url,

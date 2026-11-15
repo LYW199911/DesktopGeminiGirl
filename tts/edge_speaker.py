@@ -3,6 +3,7 @@ import sys
 import time
 import uuid
 import glob
+import base64
 import asyncio
 import tempfile
 import threading
@@ -34,7 +35,10 @@ class EdgeSpeaker:
         engine_type: str = "edge_tts",
         api_url: str = "",
         api_key: str = "",
-        model: str = ""
+        model: str = "",
+        gemini_api_key: str = "",
+        gemini_voice: str = "Aoede",
+        gemini_model: str = "gemini-3.8-flash-tts"
     ):
         self.voice = voice or "zh-CN-XiaoyiNeural"
         self.rate = rate or "+10%"
@@ -44,6 +48,9 @@ class EdgeSpeaker:
         self.api_url = (api_url or "").strip()
         self.api_key = (api_key or "").strip()
         self.model = (model or "").strip()
+        self.gemini_api_key = (gemini_api_key or "").strip()
+        self.gemini_voice = (gemini_voice or "Aoede").strip()
+        self.gemini_model = (gemini_model or "gemini-3.8-flash-tts").strip()
 
         self._temp_dir = os.path.join(tempfile.gettempdir(), "gemini_pet_tts")
         os.makedirs(self._temp_dir, exist_ok=True)
@@ -60,7 +67,10 @@ class EdgeSpeaker:
         engine_type: Optional[str] = None,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        gemini_api_key: Optional[str] = None,
+        gemini_voice: Optional[str] = None,
+        gemini_model: Optional[str] = None
     ):
         if voice is not None:
             self.voice = voice
@@ -78,6 +88,12 @@ class EdgeSpeaker:
             self.api_key = api_key.strip()
         if model is not None:
             self.model = model.strip()
+        if gemini_api_key is not None:
+            self.gemini_api_key = gemini_api_key.strip()
+        if gemini_voice is not None:
+            self.gemini_voice = gemini_voice.strip()
+        if gemini_model is not None:
+            self.gemini_model = gemini_model.strip()
 
     def toggle(self) -> bool:
         self.enabled = not self.enabled
@@ -119,12 +135,21 @@ class EdgeSpeaker:
                 # Stop existing playback before starting new one
                 self.stop()
 
-                # Unique filename every time to prevent Windows file-locking Errno 13
+                # Unique filename every time to prevent file-locking
                 unique_id = uuid.uuid4().hex[:10]
-                mp3_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
+                audio_path = None
 
-                # Mode 1: OpenAI-compatible custom TTS endpoint (GPT-SoVITS / CosyVoice / Fish Audio)
-                if self.engine_type == "openai_tts" and self.api_url and requests:
+                # Mode 1: Gemini 3.8 Flash TTS
+                if self.engine_type == "gemini_tts":
+                    audio_path = self._generate_gemini_tts(text, unique_id)
+                    if not audio_path:
+                        print("[TTS] Gemini TTS generation failed, falling back to Edge-TTS", flush=True)
+                        audio_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
+                        self._generate_edge_tts(text, audio_path)
+
+                # Mode 2: OpenAI-compatible custom TTS endpoint (GPT-SoVITS / CosyVoice / Fish Audio)
+                elif self.engine_type == "openai_tts" and self.api_url and requests:
+                    mp3_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
                     try:
                         headers = {"Content-Type": "application/json"}
                         if self.api_key:
@@ -142,21 +167,84 @@ class EdgeSpeaker:
                         if resp.status_code == 200 and len(resp.content) > 100:
                             with open(mp3_path, "wb") as f:
                                 f.write(resp.content)
+                            audio_path = mp3_path
                         else:
                             print(f"[TTS] Custom TTS API failed ({resp.status_code}): {resp.text[:120]}, falling back to Edge-TTS", flush=True)
                             self._generate_edge_tts(text, mp3_path)
+                            audio_path = mp3_path
                     except Exception as e:
                         print(f"[TTS] Custom TTS error: {e}, falling back to Edge-TTS", flush=True)
                         self._generate_edge_tts(text, mp3_path)
+                        audio_path = mp3_path
                 else:
-                    # Mode 2: Edge-TTS
-                    self._generate_edge_tts(text, mp3_path)
+                    # Mode 3: Edge-TTS
+                    audio_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
+                    self._generate_edge_tts(text, audio_path)
 
-                if os.path.exists(mp3_path):
-                    self._play_mp3(mp3_path)
+                if audio_path and os.path.exists(audio_path):
+                    self._play_audio(audio_path)
                     self._cleanup_old_files()
             except Exception as e:
                 print(f"[TTS] Error generating or playing speech: {e}", flush=True)
+
+    def _generate_gemini_tts(self, text: str, unique_id: str) -> Optional[str]:
+        if not requests:
+            print("[TTS] requests library is not installed, cannot use Gemini TTS", flush=True)
+            return None
+
+        # Resolve API Key: passed key -> tts_api_key -> config_manager api_key
+        key = self.gemini_api_key or self.api_key
+        if not key:
+            try:
+                from config_manager import ConfigManager
+                key = ConfigManager().get("api_key", "").strip()
+            except Exception:
+                pass
+
+        if not key:
+            print("[TTS] No Gemini API key found for Gemini TTS", flush=True)
+            return None
+
+        model_name = self.gemini_model or "gemini-3.8-flash-tts"
+        voice_name = self.gemini_voice or "Aoede"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
+
+        payload = {
+            "contents": [{"parts": [{"text": text}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {
+                            "voiceName": voice_name
+                        }
+                    }
+                }
+            }
+        }
+
+        try:
+            resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    for part in parts:
+                        if "inlineData" in part:
+                            inline = part["inlineData"]
+                            mime = inline.get("mimeType", "audio/wav")
+                            b64_data = inline.get("data", "")
+                            if b64_data:
+                                ext = ".wav" if "wav" in mime else ".mp3"
+                                out_path = os.path.join(self._temp_dir, f"speech_{unique_id}{ext}")
+                                with open(out_path, "wb") as f:
+                                    f.write(base64.b64decode(b64_data))
+                                return out_path
+            print(f"[TTS] Gemini TTS API returned {resp.status_code}: {resp.text[:120]}", flush=True)
+        except Exception as e:
+            print(f"[TTS] Gemini TTS request error: {e}", flush=True)
+        return None
 
     def _generate_edge_tts(self, text: str, output_path: str):
         voice = self.voice or "zh-CN-XiaoyiNeural"
@@ -171,27 +259,35 @@ class EdgeSpeaker:
 
         asyncio.run(_generate())
 
-    def _play_mp3(self, filepath: str):
+    def _play_audio(self, filepath: str):
         if IS_WIN and winmm:
             try:
                 # Safely close existing MCI alias
                 winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
                 time.sleep(0.05)
-                # Open new audio
-                cmd_open = f'open "{filepath}" type mpegvideo alias {self._current_alias}'
+                # Open audio:
+                file_ext = os.path.splitext(filepath)[1].lower()
+                type_clause = "type mpegvideo " if file_ext == ".mp3" else ""
+                cmd_open = f'open "{filepath}" {type_clause}alias {self._current_alias}'
                 res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
+                if res_open != 0 and type_clause:
+                    # Retry without type clause
+                    cmd_open = f'open "{filepath}" alias {self._current_alias}'
+                    res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
                 if res_open == 0:
                     winmm.mciSendStringW(f"play {self._current_alias}", None, 0, None)
+                elif file_ext == ".wav":
+                    import winsound
+                    winsound.PlaySound(filepath, winsound.SND_FILENAME | winsound.SND_ASYNC)
             except Exception as e:
                 print(f"[TTS] Windows MCI Play Error: {e}", flush=True)
         elif IS_MAC:
             try:
-                # macOS built-in native audio player
+                # macOS built-in native audio player supports both .wav and .mp3
                 self._current_process = subprocess.Popen(
                     ["afplay", filepath],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=0x08000000 if IS_WIN else 0
+                    stderr=subprocess.DEVNULL
                 )
             except Exception as e:
                 print(f"[TTS] macOS afplay Error: {e}", flush=True)
@@ -207,8 +303,7 @@ class EdgeSpeaker:
                     self._current_process = subprocess.Popen(
                         args,
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        creationflags=0x08000000 if IS_WIN else 0
+                        stderr=subprocess.DEVNULL
                     )
                     break
                 except FileNotFoundError:
@@ -216,13 +311,16 @@ class EdgeSpeaker:
                 except Exception as e:
                     print(f"[TTS] Linux {player} Error: {e}", flush=True)
 
+    def _play_mp3(self, filepath: str):
+        self._play_audio(filepath)
+
     def _cleanup_old_files(self):
         try:
-            files = glob.glob(os.path.join(self._temp_dir, "speech_*.mp3"))
-            # Keep only the last 3 files
-            if len(files) > 3:
+            files = glob.glob(os.path.join(self._temp_dir, "speech_*.*"))
+            # Keep only the last 5 audio files
+            if len(files) > 5:
                 files.sort(key=os.path.getmtime)
-                for f in files[:-3]:
+                for f in files[:-5]:
                     try:
                         os.remove(f)
                     except Exception:

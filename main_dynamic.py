@@ -69,7 +69,10 @@ class DynamicPetController(QObject):
             engine_type=self.config_mgr.get("tts_engine", "edge_tts"),
             api_url=self.config_mgr.get("tts_api_url", ""),
             api_key=self.config_mgr.get("tts_api_key", ""),
-            model=self.config_mgr.get("tts_model", "")
+            model=self.config_mgr.get("tts_model", ""),
+            gemini_api_key=self.config_mgr.get("api_key", ""),
+            gemini_voice=self.config_mgr.get("gemini_tts_voice", "Aoede"),
+            gemini_model=self.config_mgr.get("gemini_tts_model", "gemini-3.8-flash-tts")
         )
 
         self.auto_mode = self.config_mgr.get("auto_mode", True)
@@ -155,7 +158,10 @@ class DynamicPetController(QObject):
             engine_type=cfg.get("tts_engine", "edge_tts"),
             api_url=cfg.get("tts_api_url", ""),
             api_key=cfg.get("tts_api_key", ""),
-            model=cfg.get("tts_model", "")
+            model=cfg.get("tts_model", ""),
+            gemini_api_key=cfg.get("api_key", ""),
+            gemini_voice=cfg.get("gemini_tts_voice", "Aoede"),
+            gemini_model=cfg.get("gemini_tts_model", "gemini-3.8-flash-tts")
         )
         new_height = int(cfg.get("target_height", 250))
         self.pet.update_size(new_height)

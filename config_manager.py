@@ -40,6 +40,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "tts_api_url": "",
     "tts_api_key": "",
     "tts_model": "",
+    "gemini_tts_voice": "Aoede",
+    "gemini_tts_model": "gemini-3.8-flash-tts",
     "dynamic_fps": 15,
     "auto_mode": True,
     "target_height": 250,
