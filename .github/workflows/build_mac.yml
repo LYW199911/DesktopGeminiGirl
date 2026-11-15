@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Target Release Tag'
         required: true
-        default: 'v1.5.3'
+        default: 'v1.5.4'
   push:
     tags:
       - 'v*'
