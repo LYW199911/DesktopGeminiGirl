@@ -4,9 +4,11 @@ import time
 import math
 import random
 import json
+import gc
+import ctypes
 from PyQt6.QtWidgets import QWidget, QMenu, QApplication
-from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, pyqtSignal
-from PyQt6.QtGui import QPainter, QPixmap, QColor, QFont, QCursor, QTransform, QAction
+from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, pyqtSignal, QSize
+from PyQt6.QtGui import QPainter, QPixmap, QColor, QFont, QCursor, QTransform, QAction, QImageReader
 
 from app_paths import ASSETS_DIR
 from config_manager import ConfigManager
@@ -109,6 +111,13 @@ class DynamicDesktopPetWidget(QWidget):
         self.physics_timer.timeout.connect(self._step_60fps)
         self.physics_timer.start(16)
 
+        # Idle memory eviction timer (unloads non-idle actions after 8s in idle)
+        self.eviction_timer = QTimer(self)
+        self.eviction_timer.setSingleShot(True)
+        self.eviction_timer.setInterval(8000)
+        self.eviction_timer.timeout.connect(self._evict_unused_actions)
+        self.eviction_timer.start()
+
     def _load_actions(self):
         for k, info in ACTION_DEFS.items():
             jp = os.path.join(DYNAMIC_ACTIONS_DIR, f"{info['file']}.json")
@@ -116,10 +125,11 @@ class DynamicDesktopPetWidget(QWidget):
             if os.path.exists(jp) and os.path.exists(wp):
                 with open(jp, "r", encoding="utf-8") as f:
                     meta = json.load(f)
-                pix = QPixmap(wp)
                 self.actions[k] = {
                     "meta": meta,
-                    "pixmap": pix,
+                    "webp_path": wp,
+                    "pixmap": None,
+                    "is_downscaled": False,
                     "frame_w": meta["FrameWidth"],
                     "frame_h": meta["FrameHeight"],
                     "columns": meta["Columns"],
@@ -129,7 +139,58 @@ class DynamicDesktopPetWidget(QWidget):
                     "loop": info["loop"],
                     "title": info["title"]
                 }
-        print(f"[DynamicPet] Loaded {len(self.actions)} dynamic animation action packs.")
+        # Only load the primary 'idle' action at startup (saves ~550 MB RAM immediately)
+        self._ensure_action_loaded("idle")
+        print(f"[DynamicPet] Lazy-indexed {len(self.actions)} dynamic animation action packs (Idle loaded, on-demand RAM mode active).")
+
+    def _ensure_action_loaded(self, key: str) -> bool:
+        act = self.actions.get(key)
+        if not act:
+            return False
+        if act.get("pixmap") is not None and not act["pixmap"].isNull():
+            return True
+
+        wp = act.get("webp_path")
+        if not wp or not os.path.exists(wp):
+            return False
+
+        use_low_memory = self.config_mgr.get("dynamic_low_memory_mode", True)
+        if use_low_memory:
+            reader = QImageReader(wp)
+            orig_sz = reader.size()
+            reader.setScaledSize(QSize(orig_sz.width() // 2, orig_sz.height() // 2))
+            img = reader.read()
+            act["pixmap"] = QPixmap.fromImage(img)
+            act["is_downscaled"] = True
+        else:
+            act["pixmap"] = QPixmap(wp)
+            act["is_downscaled"] = False
+
+        return True
+
+    def _evict_unused_actions(self):
+        """Unload non-idle action pixmaps to free hundreds of megabytes of RAM."""
+        if self.current_action_key != "idle":
+            return
+        freed = False
+        for k, act in self.actions.items():
+            if k != "idle" and act.get("pixmap") is not None:
+                act["pixmap"] = None
+                freed = True
+        if freed:
+            gc.collect()
+            if sys.platform == "win32":
+                try:
+                    ctypes.windll.psapi.EmptyWorkingSet(ctypes.windll.kernel32.GetCurrentProcess())
+                except Exception:
+                    pass
+
+    def reload_textures(self):
+        """Reloads active textures when low memory mode or height setting is modified."""
+        for act in self.actions.values():
+            act["pixmap"] = None
+        self._ensure_action_loaded(self.current_action_key)
+        self.update()
 
     def _apply_size(self):
         act = self.actions.get(self.current_action_key)
@@ -165,11 +226,17 @@ class DynamicDesktopPetWidget(QWidget):
 
     def set_action(self, key: str):
         if key in self.actions and self.current_action_key != key:
+            self._ensure_action_loaded(key)
             self.current_action_key = key
             self.current_frame = 0
             self.frame_accumulator = 0.0
             self._apply_size()
             self.update()
+
+            if key == "idle":
+                self.eviction_timer.start(8000)
+            else:
+                self.eviction_timer.stop()
 
     def set_thinking(self, is_thinking: bool):
         if is_thinking:
@@ -416,8 +483,12 @@ class DynamicDesktopPetWidget(QWidget):
 
     def paintEvent(self, event):
         act = self.actions.get(self.current_action_key)
-        if not act or act["pixmap"].isNull():
+        if not act:
             return
+        if not act.get("pixmap") or act["pixmap"].isNull():
+            self._ensure_action_loaded(self.current_action_key)
+            if not act.get("pixmap") or act["pixmap"].isNull():
+                return
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -436,11 +507,16 @@ class DynamicDesktopPetWidget(QWidget):
         idx = self.current_frame
         col = idx % act["columns"]
         row = idx // act["columns"]
+
+        is_ds = act.get("is_downscaled", False)
+        fw = act["frame_w"] // 2 if is_ds else act["frame_w"]
+        fh = act["frame_h"] // 2 if is_ds else act["frame_h"]
+
         src_rect = QRect(
-            col * act["frame_w"],
-            row * act["frame_h"],
-            act["frame_w"],
-            act["frame_h"]
+            col * fw,
+            row * fh,
+            fw,
+            fh
         )
         dst_w = int(act["frame_w"] * self.scale_factor)
         dst_h = int(act["frame_h"] * self.scale_factor)

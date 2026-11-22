@@ -610,7 +610,12 @@ class SettingsWindow(QMainWindow):
             )
             fps_box.addWidget(self.slider_fps)
             fps_box.addWidget(self.lbl_fps_val)
-            box_voice_l.addLayout(fps_box, 10, 1, 1, 2)
+            box_voice_l.addLayout(fps_box, 12, 1, 1, 2)
+
+            box_voice_l.addWidget(QLabel("动态内存优化模式:"), 13, 0)
+            self.chk_low_mem = QCheckBox("启用智能降载 (推荐: 内存仅 ~90MB，按需采样杜绝臃肿)")
+            self.chk_low_mem.setChecked(bool(self.config_mgr.get("dynamic_low_memory_mode", True)))
+            box_voice_l.addWidget(self.chk_low_mem, 13, 1, 1, 2)
 
         layout.addWidget(box_voice)
 
@@ -932,6 +937,9 @@ class SettingsWindow(QMainWindow):
                 fps_val = int(cfg.get("dynamic_fps", 15))
                 self.slider_fps.setValue(fps_val)
                 self.lbl_fps_val.setText(f"{fps_val} FPS ({fps_val/12.0:.2f}x 动作倍速)")
+
+            if hasattr(self, 'chk_low_mem'):
+                self.chk_low_mem.setChecked(bool(cfg.get("dynamic_low_memory_mode", True)))
 
             # 2. Avatar Outfits
             if hasattr(self, 'outfit_cards') and self.outfit_cards:
@@ -1496,6 +1504,7 @@ class SettingsWindow(QMainWindow):
             "tts_model": tts_model,
             "target_height": target_height,
             "dynamic_fps": self.slider_fps.value() if hasattr(self, 'slider_fps') else int(self.config_mgr.get("dynamic_fps", 15)),
+            "dynamic_low_memory_mode": self.chk_low_mem.isChecked() if hasattr(self, 'chk_low_mem') else bool(self.config_mgr.get("dynamic_low_memory_mode", True)),
             "pet_name": pet_name,
             "catchphrases": catchphrases,
             "persona_style": persona_style,

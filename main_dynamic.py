@@ -167,6 +167,7 @@ class DynamicPetController(QObject):
         self.pet.update_size(new_height)
         new_fps = int(cfg.get("dynamic_fps", 15))
         self.pet.set_dynamic_fps(new_fps)
+        self.pet.reload_textures()
 
     def _check_desktop_state(self):
         if not self.auto_mode or self._is_analyzing:
