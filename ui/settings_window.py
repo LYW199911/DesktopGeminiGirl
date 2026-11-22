@@ -469,6 +469,16 @@ class SettingsWindow(QMainWindow):
         cooldown_box.addWidget(self.lbl_cooldown_val)
         box_sense_l.addLayout(cooldown_box, 1, 1)
 
+        box_sense_l.addWidget(QLabel("气泡停留基础时长:"), 2, 0)
+        bubble_box = QHBoxLayout()
+        self.slider_bubble = QSlider(Qt.Orientation.Horizontal)
+        self.slider_bubble.setRange(4, 30)
+        self.lbl_bubble_val = QLabel("8 秒 (开启语音时自动同步延展)")
+        self.slider_bubble.valueChanged.connect(lambda v: self.lbl_bubble_val.setText(f"{v} 秒 (开启语音时自动同步延展)"))
+        bubble_box.addWidget(self.slider_bubble)
+        bubble_box.addWidget(self.lbl_bubble_val)
+        box_sense_l.addLayout(bubble_box, 2, 1)
+
         # Scene preference checkboxes
         scene_h = QHBoxLayout()
         self.chk_game = QCheckBox("打游戏战况锐评")
@@ -477,19 +487,19 @@ class SettingsWindow(QMainWindow):
         scene_h.addWidget(self.chk_game)
         scene_h.addWidget(self.chk_video)
         scene_h.addWidget(self.chk_work)
-        box_sense_l.addLayout(scene_h, 2, 0, 1, 2)
+        box_sense_l.addLayout(scene_h, 3, 0, 1, 2)
 
         # Autostart checkbox
         self.chk_autostart = QCheckBox("开机自动在后台启动哈Gemi (Windows 自启动)")
-        box_sense_l.addWidget(self.chk_autostart, 3, 0, 1, 2)
+        box_sense_l.addWidget(self.chk_autostart, 4, 0, 1, 2)
 
         # Persistent Memory checkbox
         self.chk_memory = QCheckBox("开启长期记忆 (跨会话/开机后依然记住前情，保存在本地 memory.json)")
-        box_sense_l.addWidget(self.chk_memory, 4, 0, 1, 2)
+        box_sense_l.addWidget(self.chk_memory, 5, 0, 1, 2)
 
         # Auto check update checkbox
         self.chk_auto_update = QCheckBox("启动时自动检查新版本与最新公告 (GitHub Releases)")
-        box_sense_l.addWidget(self.chk_auto_update, 5, 0, 1, 2)
+        box_sense_l.addWidget(self.chk_auto_update, 6, 0, 1, 2)
 
         layout.addWidget(box_sense)
 
@@ -870,6 +880,10 @@ class SettingsWindow(QMainWindow):
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
             self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
             self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
+
+            b_dur = int(cfg.get("bubble_duration", 8))
+            self.slider_bubble.setValue(b_dur)
+            self.lbl_bubble_val.setText(f"{b_dur} 秒 (开启语音时自动同步延展)")
 
             self.chk_game.setChecked(cfg.get("comment_on_games", True))
             self.chk_video.setChecked(cfg.get("comment_on_videos", True))
@@ -1428,6 +1442,7 @@ class SettingsWindow(QMainWindow):
         vertex_credentials_file = self.input_vertex_creds.text().strip()
         auto_mode = self.chk_auto.isChecked()
         cooldown = self.slider_cooldown.value()
+        bubble_duration = self.slider_bubble.value()
         comment_games = self.chk_game.isChecked()
         comment_videos = self.chk_video.isChecked()
         comment_work = self.chk_work.isChecked()
@@ -1489,6 +1504,7 @@ class SettingsWindow(QMainWindow):
             "tencent_secret_key": tencent_secret_key,
             "auto_mode": auto_mode,
             "cooldown_seconds": cooldown,
+            "bubble_duration": bubble_duration,
             "comment_on_games": comment_games,
             "comment_on_videos": comment_videos,
             "comment_on_work": comment_work,

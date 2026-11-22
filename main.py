@@ -33,6 +33,7 @@ from version import VERSION
 
 class DesktopPetController(QObject):
     critique_ready = pyqtSignal(str)
+    speech_started = pyqtSignal(int)
     voice_toggle_requested = pyqtSignal()
     voice_result_ready = pyqtSignal(bool, str)
 
@@ -61,6 +62,7 @@ class DesktopPetController(QObject):
             gemini_voice=self.config_mgr.get("gemini_tts_voice", "Aoede"),
             gemini_model=self.config_mgr.get("gemini_tts_model", "gemini-3.8-flash-tts")
         )
+        self.speaker.on_start = lambda duration: self.speech_started.emit(duration)
 
         self.auto_mode = self.config_mgr.get("auto_mode", True)
         self._is_analyzing = False
@@ -72,6 +74,7 @@ class DesktopPetController(QObject):
 
         # Connect signals
         self.critique_ready.connect(self._on_critique_ready)
+        self.speech_started.connect(self._on_speech_started)
         self.voice_toggle_requested.connect(self._toggle_voice_input)
         self.voice_result_ready.connect(self._on_voice_result)
 
@@ -395,8 +398,20 @@ class DesktopPetController(QObject):
         # 2. Show bubble and speak
         self.pet.show()
         self.pet.raise_()
-        self.pet.show_critique(clean_text)
+
+        base_sec = float(self.config_mgr.get("bubble_duration", 8))
+        base_ms = max(4000, int(base_sec * 1000))
+        tts_active = self.speaker.enabled
+        initial_duration = max(base_ms + 10000, 18000) if tts_active else max(base_ms, 6000 + len(clean_text) * 70)
+
+        self.pet.show_critique(clean_text, duration_ms=initial_duration)
         self.speaker.speak_async(clean_text)
+
+    def _on_speech_started(self, duration_ms: int):
+        base_sec = float(self.config_mgr.get("bubble_duration", 8))
+        base_ms = max(4000, int(base_sec * 1000))
+        target_ms = max(base_ms, duration_ms + 1800)
+        self.pet.bubble.extend_duration(target_ms)
 
     def toggle_tts(self):
         status = self.speaker.toggle()

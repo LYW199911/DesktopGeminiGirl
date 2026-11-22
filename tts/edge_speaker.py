@@ -57,6 +57,7 @@ class EdgeSpeaker:
         self._current_alias = "gemini_voice"
         self._lock = threading.Lock()
         self._current_process: Optional[subprocess.Popen] = None
+        self.on_start = None  # Callback signature: Callable[[int], None] -> duration_ms
 
     def update_config(
         self,
@@ -186,7 +187,7 @@ class EdgeSpeaker:
                     self._generate_edge_tts(text, audio_path)
 
                 if audio_path and os.path.exists(audio_path):
-                    self._play_audio(audio_path)
+                    self._play_audio(audio_path, text=text)
                     self._cleanup_old_files()
             except Exception as e:
                 print(f"[TTS] Error generating or playing speech: {e}", flush=True)
@@ -263,7 +264,39 @@ class EdgeSpeaker:
 
         asyncio.run(_generate())
 
-    def _play_audio(self, filepath: str):
+    def _get_audio_duration_ms(self, filepath: str, text: str = "") -> int:
+        """Accurately calculates or queries audio duration in milliseconds across different TTS formats."""
+        # 1. Exact measurement for WAV (RIFF) using python standard library wave
+        try:
+            with open(filepath, "rb") as f:
+                sig = f.read(4)
+            if sig == b"RIFF":
+                import wave
+                with wave.open(filepath, "rb") as w:
+                    frames = w.getnframes()
+                    rate = w.getframerate()
+                    if rate > 0:
+                        return int(frames * 1000 / rate)
+        except Exception:
+            pass
+
+        # 2. Query Windows MCI length in milliseconds
+        if IS_WIN and winmm:
+            try:
+                buf = ctypes.create_unicode_buffer(128)
+                winmm.mciSendStringW(f"set {self._current_alias} time format milliseconds", None, 0, None)
+                winmm.mciSendStringW(f"status {self._current_alias} length", buf, 128, None)
+                val = buf.value.strip()
+                if val.isdigit() and int(val) > 0:
+                    return int(val)
+            except Exception:
+                pass
+
+        # 3. Fallback estimation based on text length (~3.5 Chinese characters per second)
+        return max(3500, int(len(text) * 280))
+
+    def _play_audio(self, filepath: str, text: str = ""):
+        duration_ms = 0
         if IS_WIN and winmm:
             try:
                 # Safely close existing MCI alias
@@ -295,6 +328,8 @@ class EdgeSpeaker:
                     cmd_open = f'open "{filepath}" {alt_type}alias {self._current_alias}'
                     res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
 
+                duration_ms = self._get_audio_duration_ms(filepath, text=text)
+
                 if res_open == 0:
                     winmm.mciSendStringW(f"play {self._current_alias}", None, 0, None)
                 elif is_wav or file_ext == ".wav":
@@ -306,6 +341,7 @@ class EdgeSpeaker:
                 print(f"[TTS] Windows MCI Play Error: {e}", flush=True)
         elif IS_MAC:
             try:
+                duration_ms = self._get_audio_duration_ms(filepath, text=text)
                 # macOS built-in native audio player supports both .wav and .mp3
                 self._current_process = subprocess.Popen(
                     ["afplay", filepath],
@@ -316,6 +352,7 @@ class EdgeSpeaker:
                 print(f"[TTS] macOS afplay Error: {e}", flush=True)
         else:
             # Linux fallback (paplay / ffplay / aplay / mpv)
+            duration_ms = self._get_audio_duration_ms(filepath, text=text)
             for player in ["mpv", "ffplay", "paplay", "aplay"]:
                 try:
                     args = [player, filepath]
@@ -333,6 +370,13 @@ class EdgeSpeaker:
                     continue
                 except Exception as e:
                     print(f"[TTS] Linux {player} Error: {e}", flush=True)
+
+        # Notify callback that playback has started with the detected audio duration
+        if callable(self.on_start):
+            try:
+                self.on_start(duration_ms)
+            except Exception as e:
+                print(f"[TTS] on_start callback error: {e}", flush=True)
 
     def _play_mp3(self, filepath: str):
         self._play_audio(filepath)

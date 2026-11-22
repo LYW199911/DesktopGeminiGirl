@@ -190,6 +190,16 @@ class SpeechBubble(QWidget):
         self.type_timer.start(20)
         self.hide_timer.start(duration_ms)
 
+    def extend_duration(self, min_remaining_ms: int):
+        """
+        Extends or updates the auto-hide timer duration, ensuring the bubble stays visible
+        for at least `min_remaining_ms` from now.
+        """
+        if self.isVisible():
+            rem = max(0, self.hide_timer.remainingTime())
+            target_ms = max(rem, min_remaining_ms)
+            self.hide_timer.start(target_ms)
+
     def _type_next_char(self):
         if self._current_index < len(self._full_text):
             self._current_index += 1

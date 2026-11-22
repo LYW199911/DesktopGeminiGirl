@@ -32,6 +32,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "api_timeout": 35,
     "temperature": 0.88,
     "cooldown_seconds": 45,
+    "bubble_duration": 8,
     "enable_tts": True,
     "tts_engine": "edge_tts",
     "tts_voice": "zh-CN-XiaoyiNeural",

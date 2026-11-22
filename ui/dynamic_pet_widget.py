@@ -310,14 +310,14 @@ class DynamicDesktopPetWidget(QWidget):
                 by = self.y() + self.height() - 20
         return bx, by
 
-    def show_critique(self, text: str):
+    def show_critique(self, text: str, duration_ms: Optional[int] = None):
         self.last_critique_text = text
         self.raise_()
         bw, bh = self.bubble.calculate_size(text)
         bx, by = self._calc_bubble_pos(bw, bh)
 
         self.bubble.move(bx, by)
-        self.bubble.show_text(text)
+        self.bubble.show_text(text, duration_ms=duration_ms)
         self.bubble.raise_()
 
     def reopen_last_bubble(self):
