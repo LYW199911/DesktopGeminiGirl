@@ -83,8 +83,8 @@ class SettingsWindow(QMainWindow):
             self.setWindowTitle(f"哈Gemi 动态版 · 控制台与设置中心 {VERSION}")
         else:
             self.setWindowTitle(f"哈Gemi · 控制台与设置中心 {VERSION}")
-        self.setMinimumSize(820, 640)
-        self.resize(860, 680)
+        self.setMinimumSize(940, 660)
+        self.resize(1020, 720)
 
         icon_path = os.path.join(ASSETS_DIR, "app_icon.ico")
         if os.path.exists(icon_path):
@@ -278,6 +278,7 @@ class SettingsWindow(QMainWindow):
     def _build_general_tab(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -629,6 +630,7 @@ class SettingsWindow(QMainWindow):
     def _build_avatar_tab(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -712,6 +714,7 @@ class SettingsWindow(QMainWindow):
     def _build_persona_tab(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         content = QWidget()
         layout = QVBoxLayout(content)

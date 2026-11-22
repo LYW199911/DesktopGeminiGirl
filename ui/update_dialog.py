@@ -33,8 +33,8 @@ class UpdateDialog(QDialog):
         self.checker = UpdateChecker(current_version=VERSION, parent=self)
 
         self.setWindowTitle("哈Gemi · 检查更新与公告中心")
-        self.setMinimumSize(680, 520)
-        self.resize(720, 560)
+        self.setMinimumSize(820, 540)
+        self.resize(880, 580)
 
         # Style matching Anime Dark Studio theme
         self.setStyleSheet("""
@@ -138,6 +138,8 @@ class UpdateDialog(QDialog):
         # 2. Release Notes & Announcement Browser
         self.text_browser = QTextBrowser(self)
         self.text_browser.setOpenExternalLinks(True)
+        self.text_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.text_browser.setLineWrapMode(QTextBrowser.LineWrapMode.WidgetWidth)
         self.text_browser.setHtml("<p style='color:#a49cb8; text-align:center; padding-top:40px;'>正在连接 GitHub 探测最新版本发布日志，请稍候喵~ ✨</p>")
         layout.addWidget(self.text_browser)
 

@@ -149,7 +149,6 @@ class EdgeSpeaker:
 
                 # Mode 2: OpenAI-compatible custom TTS endpoint (GPT-SoVITS / CosyVoice / Fish Audio)
                 elif self.engine_type == "openai_tts" and self.api_url and requests:
-                    mp3_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
                     try:
                         headers = {"Content-Type": "application/json"}
                         if self.api_key:
@@ -165,17 +164,22 @@ class EdgeSpeaker:
 
                         resp = requests.post(endpoint, json=payload, headers=headers, timeout=12)
                         if resp.status_code == 200 and len(resp.content) > 100:
-                            with open(mp3_path, "wb") as f:
+                            is_wav = resp.content.startswith(b"RIFF") or "wav" in resp.headers.get("Content-Type", "").lower()
+                            ext = ".wav" if is_wav else ".mp3"
+                            out_path = os.path.join(self._temp_dir, f"speech_{unique_id}{ext}")
+                            with open(out_path, "wb") as f:
                                 f.write(resp.content)
-                            audio_path = mp3_path
+                            audio_path = out_path
                         else:
                             print(f"[TTS] Custom TTS API failed ({resp.status_code}): {resp.text[:120]}, falling back to Edge-TTS", flush=True)
-                            self._generate_edge_tts(text, mp3_path)
-                            audio_path = mp3_path
+                            fallback_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
+                            self._generate_edge_tts(text, fallback_path)
+                            audio_path = fallback_path
                     except Exception as e:
                         print(f"[TTS] Custom TTS error: {e}, falling back to Edge-TTS", flush=True)
-                        self._generate_edge_tts(text, mp3_path)
-                        audio_path = mp3_path
+                        fallback_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
+                        self._generate_edge_tts(text, fallback_path)
+                        audio_path = fallback_path
                 else:
                     # Mode 3: Edge-TTS
                     audio_path = os.path.join(self._temp_dir, f"speech_{unique_id}.mp3")
@@ -265,20 +269,39 @@ class EdgeSpeaker:
                 # Safely close existing MCI alias
                 winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
                 time.sleep(0.05)
-                # Open audio:
+
+                # Check magic bytes to detect true audio format (handles wav content with any extension)
+                is_wav = False
+                try:
+                    with open(filepath, "rb") as f:
+                        if f.read(4) == b"RIFF":
+                            is_wav = True
+                except Exception:
+                    pass
+
                 file_ext = os.path.splitext(filepath)[1].lower()
-                type_clause = "type mpegvideo " if file_ext == ".mp3" else ""
+                if is_wav or file_ext == ".wav":
+                    type_clause = "type waveaudio "
+                elif file_ext == ".mp3":
+                    type_clause = "type mpegvideo "
+                else:
+                    type_clause = ""
+
                 cmd_open = f'open "{filepath}" {type_clause}alias {self._current_alias}'
                 res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
-                if res_open != 0 and type_clause:
-                    # Retry without type clause
-                    cmd_open = f'open "{filepath}" alias {self._current_alias}'
+                if res_open != 0:
+                    # Retry without type clause or with waveaudio
+                    alt_type = "type waveaudio " if not is_wav else ""
+                    cmd_open = f'open "{filepath}" {alt_type}alias {self._current_alias}'
                     res_open = winmm.mciSendStringW(cmd_open, None, 0, None)
+
                 if res_open == 0:
                     winmm.mciSendStringW(f"play {self._current_alias}", None, 0, None)
-                elif file_ext == ".wav":
+                elif is_wav or file_ext == ".wav":
                     import winsound
                     winsound.PlaySound(filepath, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                else:
+                    print(f"[TTS] Windows MCI open failed with error code: {res_open}", flush=True)
             except Exception as e:
                 print(f"[TTS] Windows MCI Play Error: {e}", flush=True)
         elif IS_MAC:
