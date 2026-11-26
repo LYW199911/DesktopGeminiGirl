@@ -1,7 +1,7 @@
 {
-  "Source": "hagami_3q_master.png",
-  "FrameWidth": 512,
-  "FrameHeight": 512,
+  "Source": "chibi_master.png",
+  "FrameWidth": 640,
+  "FrameHeight": 360,
   "Columns": 4,
   "Rows": 3,
   "FrameCount": 12,
