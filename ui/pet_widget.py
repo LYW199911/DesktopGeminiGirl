@@ -251,13 +251,7 @@ class DesktopPetWidget(QWidget):
         if is_walking:
             oy -= abs(math.sin(self._walk_phase)) * 3.0
 
-        use_eye_layers = (
-            self.config_mgr.get("eye_tracking_enabled", False)
-            and self.current_filename == "avatar_standing.png"
-            and self._eye_meta is not None
-            and self._base_no_pupils is not None
-            and not self._base_no_pupils.isNull()
-        )
+        use_eye_layers = False
         draw_pm = self._base_no_pupils.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation) if use_eye_layers else self._base_pixmap
 
         if self._facing_left:
