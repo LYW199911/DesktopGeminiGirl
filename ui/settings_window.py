@@ -415,19 +415,27 @@ class SettingsWindow(QMainWindow):
 
         layout.addWidget(box_api)
 
-        # Tencent Cloud speech recognition credentials
-        box_asr = QGroupBox("语音输入 (腾讯云一句话识别)")
+        # Speech recognition credentials (3-way switcher)
+        box_asr = QGroupBox("语音输入 (Ctrl+F1 语音对话)")
         box_asr_l = QGridLayout(box_asr)
         box_asr_l.setSpacing(10)
-        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 0, 0)
+
+        box_asr_l.addWidget(QLabel("语音识别引擎:"), 0, 0)
+        self.combo_asr_provider = QComboBox()
+        self.combo_asr_provider.addItem("腾讯云一句话识别 (需填下方密钥)", "tencent")
+        self.combo_asr_provider.addItem("Gemini 原生听写 (直接传音频给 Gemini，免配 ASR 密钥)", "gemini_audio")
+        self.combo_asr_provider.addItem("本地离线 ASR (faster-whisper，参考 Coopanion)", "local_asr")
+        box_asr_l.addWidget(self.combo_asr_provider, 0, 1, 1, 3)
+
+        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 1, 0)
         self.input_tencent_secret_id = QLineEdit()
         self.input_tencent_secret_id.setPlaceholderText("腾讯云 API 密钥管理中的 SecretId")
-        box_asr_l.addWidget(self.input_tencent_secret_id, 0, 1, 1, 3)
-        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 1, 0)
+        box_asr_l.addWidget(self.input_tencent_secret_id, 1, 1, 1, 3)
+        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 2, 0)
         self.input_tencent_secret_key = QLineEdit()
         self.input_tencent_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_tencent_secret_key.setPlaceholderText("腾讯云 API 密钥管理中的 SecretKey")
-        box_asr_l.addWidget(self.input_tencent_secret_key, 1, 1, 1, 3)
+        box_asr_l.addWidget(self.input_tencent_secret_key, 2, 1, 1, 3)
 
         # Tencent Cloud console link and copy button
         tencent_link_h = QHBoxLayout()
@@ -444,12 +452,44 @@ class SettingsWindow(QMainWindow):
         tencent_link_h.addWidget(btn_copy_tencent)
         tencent_link_h.addStretch()
 
-        box_asr_l.addLayout(tencent_link_h, 2, 0, 1, 4)
+        box_asr_l.addLayout(tencent_link_h, 3, 0, 1, 4)
 
-        asr_hint = QLabel("按 Ctrl+F1 开始/结束录音；停止后自动识别并发送。录音最长 55 秒，音频仅暂存在内存并发送给腾讯云，不写入本地文件。")
+        asr_hint = QLabel("按 Ctrl+F1 开始/结束录音；停止后自动识别并发送。录音最长 55 秒。")
         asr_hint.setWordWrap(True)
         asr_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
-        box_asr_l.addWidget(asr_hint, 3, 0, 1, 4)
+        box_asr_l.addWidget(asr_hint, 4, 0, 1, 4)
+
+        layout.addWidget(box_asr)
+
+        # Screen capture scope & Dev Demo features
+        box_dev = QGroupBox("隐私截屏范围与桌宠交互 (Dev 实验性功能)")
+        box_dev_l = QGridLayout(box_dev)
+        box_dev_l.setSpacing(10)
+
+        box_dev_l.addWidget(QLabel("截屏读取范围:"), 0, 0)
+        self.combo_capture_mode = QComboBox()
+        self.combo_capture_mode.addItem("主屏幕 (默认)", "primary")
+        self.combo_capture_mode.addItem("所有屏幕拼接 (多屏全景)", "all_screens")
+        self.combo_capture_mode.addItem("副屏幕 (第 2 块屏幕)", "monitor_2")
+        self.combo_capture_mode.addItem("仅当前活跃窗口 (保护其他隐私)", "active_window")
+        self.combo_capture_mode.addItem("自定义框选矩形区域", "custom_region")
+        box_dev_l.addWidget(self.combo_capture_mode, 0, 1, 1, 2)
+
+        self.btn_select_region = QPushButton("框选屏幕区域")
+        self.btn_select_region.setObjectName("SecondaryBtn")
+        self.btn_select_region.clicked.connect(self._open_region_selector)
+        box_dev_l.addWidget(self.btn_select_region, 0, 3)
+
+        self.lbl_custom_region = QLabel("当前框选区域: 未设置")
+        self.lbl_custom_region.setStyleSheet("color: #a49cb8; font-size: 11px;")
+        box_dev_l.addWidget(self.lbl_custom_region, 1, 0, 1, 4)
+
+        self.chk_eye_tracking = QCheckBox("开启视线/微视差跟随鼠标 (Eye Tracking)")
+        self.chk_wandering = QCheckBox("开启桌面边缘自动漫步 (Wandering Demo - 不抢焦点)")
+        box_dev_l.addWidget(self.chk_eye_tracking, 2, 0, 1, 2)
+        box_dev_l.addWidget(self.chk_wandering, 2, 2, 1, 2)
+
+        layout.addWidget(box_dev)
         layout.addWidget(box_asr)
 
         # 2. Perception & Autostart Box
@@ -877,6 +917,18 @@ class SettingsWindow(QMainWindow):
             self.spin_timeout.setValue(int(cfg.get("api_timeout", 35)))
             self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
             self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
+            asr_idx = self.combo_asr_provider.findData(cfg.get("asr_provider", "tencent"))
+            if asr_idx >= 0:
+                self.combo_asr_provider.setCurrentIndex(asr_idx)
+
+            cap_idx = self.combo_capture_mode.findData(cfg.get("capture_mode", "primary"))
+            if cap_idx >= 0:
+                self.combo_capture_mode.setCurrentIndex(cap_idx)
+            self._custom_capture_rect = cfg.get("custom_capture_rect", [])
+            if isinstance(self._custom_capture_rect, list) and len(self._custom_capture_rect) == 4:
+                self.lbl_custom_region.setText(f"当前框选区域: X={self._custom_capture_rect[0]}, Y={self._custom_capture_rect[1]}, {self._custom_capture_rect[2]}x{self._custom_capture_rect[3]}")
+            self.chk_eye_tracking.setChecked(cfg.get("eye_tracking_enabled", False))
+            self.chk_wandering.setChecked(cfg.get("wandering_enabled", False))
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
             self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
             self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
@@ -1309,6 +1361,18 @@ class SettingsWindow(QMainWindow):
         else:
             QMessageBox.critical(self, "连接失败", msg)
 
+    def _open_region_selector(self):
+        from .region_selector import RegionSelectorOverlay
+        self._region_overlay = RegionSelectorOverlay()
+        def on_selected(x, y, w, h):
+            self._custom_capture_rect = [x, y, w, h]
+            self.lbl_custom_region.setText(f"当前框选区域: X={x}, Y={y}, {w}x{h}")
+            idx = self.combo_capture_mode.findData("custom_region")
+            if idx >= 0:
+                self.combo_capture_mode.setCurrentIndex(idx)
+        self._region_overlay.region_selected.connect(on_selected)
+        self._region_overlay.show()
+
     def _test_voice(self):
         engine_type = self.combo_tts_engine.currentData() or "edge_tts"
         voice = self.combo_voice.currentData()
@@ -1502,6 +1566,11 @@ class SettingsWindow(QMainWindow):
             "api_timeout": api_timeout,
             "tencent_secret_id": tencent_secret_id,
             "tencent_secret_key": tencent_secret_key,
+            "asr_provider": self.combo_asr_provider.currentData() or "tencent",
+            "capture_mode": self.combo_capture_mode.currentData() or "primary",
+            "custom_capture_rect": getattr(self, "_custom_capture_rect", []),
+            "eye_tracking_enabled": self.chk_eye_tracking.isChecked(),
+            "wandering_enabled": self.chk_wandering.isChecked(),
             "auto_mode": auto_mode,
             "cooldown_seconds": cooldown,
             "bubble_duration": bubble_duration,

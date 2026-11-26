@@ -240,10 +240,17 @@ class DesktopPetController(QObject):
         if self._is_analyzing:
             self._show_voice_status("我正在回复上一条消息，等一下再语音输入吧~")
             return
-        if not self.config_mgr.get("tencent_secret_id", "").strip() or not self.config_mgr.get("tencent_secret_key", "").strip():
-            self._show_voice_status("请先在设置中心填写腾讯云 SecretId 和 SecretKey，再按 Ctrl+F1 录音喵~")
-            self.show_settings()
-            return
+        asr_provider = self.config_mgr.get("asr_provider", "tencent").strip()
+        if asr_provider == "tencent":
+            if not self.config_mgr.get("tencent_secret_id", "").strip() or not self.config_mgr.get("tencent_secret_key", "").strip():
+                self._show_voice_status("请先在设置中心填写腾讯云 SecretId 和 SecretKey（或切换为 Gemini 原生/本地语音识别），再按 Ctrl+F1 录音喵~")
+                self.show_settings()
+                return
+        elif asr_provider == "gemini_audio":
+            if not self.config_mgr.get("api_key", "").strip():
+                self._show_voice_status("使用 Gemini 原生语音识别需要先配置 Gemini API Key 喵~")
+                self.show_settings()
+                return
 
         try:
             import sounddevice as sd
@@ -301,14 +308,30 @@ class DesktopPetController(QObject):
             return
 
         self._voice_transcribing = True
-        self._show_voice_status("录音结束，正在连接腾讯云识别…")
+        asr_provider = self.config_mgr.get("asr_provider", "tencent").strip()
+        if asr_provider == "gemini_audio":
+            self._show_voice_status("录音结束，正在使用 Gemini 原生听写…")
+        elif asr_provider == "local_asr":
+            self._show_voice_status("录音结束，正在使用本地离线模型识别…")
+        else:
+            self._show_voice_status("录音结束，正在连接腾讯云识别…")
+
         secret_id = self.config_mgr.get("tencent_secret_id", "").strip()
         secret_key = self.config_mgr.get("tencent_secret_key", "").strip()
+        api_key = self.config_mgr.get("api_key", "").strip()
+        model = self.config_mgr.get("model", "gemini-2.5-flash").strip()
 
         def recognize():
             try:
-                from perception.tencent_asr import transcribe_pcm
-                text = transcribe_pcm(pcm_data, secret_id, secret_key)
+                if asr_provider == "gemini_audio":
+                    from perception.local_asr import transcribe_pcm_gemini_audio
+                    text = transcribe_pcm_gemini_audio(pcm_data, api_key, model=model)
+                elif asr_provider == "local_asr":
+                    from perception.local_asr import transcribe_pcm_local
+                    text = transcribe_pcm_local(pcm_data)
+                else:
+                    from perception.tencent_asr import transcribe_pcm
+                    text = transcribe_pcm(pcm_data, secret_id, secret_key)
                 self.voice_result_ready.emit(True, text)
             except Exception as exc:
                 self.voice_result_ready.emit(False, str(exc))

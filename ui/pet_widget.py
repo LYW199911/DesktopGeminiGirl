@@ -1,7 +1,8 @@
 import os
+from typing import Optional
 from PyQt6.QtWidgets import QWidget, QLabel, QMenu, QApplication
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
-from PyQt6.QtGui import QPixmap, QCursor, QAction
+from PyQt6.QtGui import QPixmap, QCursor, QAction, QTransform
 from .bubble_widget import SpeechBubble
 from .interaction_dialog import InteractionDialog
 from config_manager import ConfigManager
@@ -36,9 +37,11 @@ class DesktopPetWidget(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
         self.target_height = target_height
         if not avatar_path:
@@ -66,12 +69,16 @@ class DesktopPetWidget(QWidget):
         # Place initially at bottom-right corner of screen
         self._place_at_bottom_right()
 
-        # Subtle hovering animation offset (smooth and lightweight)
+        # Subtle hovering animation, eye tracking & wandering state
         self._hover_offset = 0.0
         self._hover_direction = 1.0
+        self._facing_left = False
+        self._base_pixmap = None
+        self._wander_dir = -1
+        self._wander_pause_ticks = 0
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._step_hover)
-        self._anim_timer.start(120)
+        self._anim_timer.start(80)
 
     def _load_avatar(self, path: str):
         self.avatar_path = path
@@ -88,10 +95,11 @@ class DesktopPetWidget(QWidget):
                     Qt.TransformationMode.SmoothTransformation
                 )
 
-            self.avatar_label.setPixmap(scaled)
+            self._base_pixmap = scaled
+            self._apply_facing_pixmap()
             self.avatar_label.resize(scaled.size())
-            self.resize(scaled.width(), scaled.height() + 10)
-            self.avatar_label.move(0, 5)
+            self.resize(scaled.width() + 12, scaled.height() + 14)
+            self.avatar_label.move(6, 7)
         else:
             pet_name = self.config_mgr.get("pet_name", "哈Gemi")
             self.avatar_label.setText(pet_name)
@@ -153,11 +161,60 @@ class DesktopPetWidget(QWidget):
         self.move(x, y)
         print(f"[DesktopPet] Placed pet at ({x}, {y})", flush=True)
 
+    def _apply_facing_pixmap(self):
+        if not self._base_pixmap:
+            return
+        if self._facing_left:
+            flipped = self._base_pixmap.transformed(QTransform().scale(-1, 1))
+            self.avatar_label.setPixmap(flipped)
+        else:
+            self.avatar_label.setPixmap(self._base_pixmap)
+
     def _step_hover(self):
-        self._hover_offset += 0.5 * self._hover_direction
+        self._hover_offset += 0.4 * self._hover_direction
         if abs(self._hover_offset) >= 3:
             self._hover_direction *= -1
-        self.avatar_label.move(0, int(5 + self._hover_offset))
+
+        dx_offset = 0
+        dy_offset = 0
+        if self.config_mgr.get("eye_tracking_enabled", False):
+            cursor_pos = QCursor.pos()
+            center = self.mapToGlobal(QPoint(self.width() // 2, self.height() // 3))
+            dx = cursor_pos.x() - center.x()
+            dy = cursor_pos.y() - center.y()
+            dx_offset = max(-6, min(6, int(dx / 80)))
+            dy_offset = max(-4, min(4, int(dy / 80)))
+            # Flip facing direction subtly if cursor is far to the left/right
+            if not self.config_mgr.get("wandering_enabled", False):
+                want_left = dx < -120
+                if want_left != self._facing_left and abs(dx) > 120:
+                    self._facing_left = want_left
+                    self._apply_facing_pixmap()
+
+        self.avatar_label.move(6 + dx_offset, int(7 + self._hover_offset + dy_offset))
+
+        # Coopanion-style non-focus-stealing desktop wandering
+        if self.config_mgr.get("wandering_enabled", False) and self._drag_pos.isNull():
+            if self._wander_pause_ticks > 0:
+                self._wander_pause_ticks -= 1
+                return
+            screen_obj = self.screen() or QApplication.primaryScreen()
+            if screen_obj:
+                geom = screen_obj.availableGeometry()
+                next_x = self.x() + self._wander_dir * 2
+                if next_x <= geom.x() + 10:
+                    next_x = geom.x() + 10
+                    self._wander_dir = 1
+                    self._wander_pause_ticks = 25
+                elif next_x + self.width() >= geom.x() + geom.width() - 10:
+                    next_x = geom.x() + geom.width() - self.width() - 10
+                    self._wander_dir = -1
+                    self._wander_pause_ticks = 25
+                want_left = self._wander_dir < 0
+                if want_left != self._facing_left:
+                    self._facing_left = want_left
+                    self._apply_facing_pixmap()
+                self.move(next_x, self.y())
 
     def showEvent(self, event):
         super().showEvent(event)
