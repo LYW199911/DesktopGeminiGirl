@@ -1,10 +1,10 @@
 {
-  "Source": "chibi_master.png",
+  "Source": "gemini_generated_video_9acfaf10.mp4",
   "FrameWidth": 640,
   "FrameHeight": 360,
-  "Columns": 4,
-  "Rows": 3,
-  "FrameCount": 12,
+  "Columns": 8,
+  "Rows": 8,
+  "FrameCount": 60,
   "SampleFps": 12,
   "Alpha": "RGBA",
   "ImageFormat": "webp"
