@@ -91,3 +91,4 @@ class RegionSelectorOverlay(QWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.close()
+

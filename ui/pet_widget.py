@@ -52,6 +52,12 @@ class DesktopPetWidget(QWidget):
         self.avatar_path = avatar_path
         self.current_filename = os.path.basename(avatar_path)
         self._drag_pos = QPoint()
+        self._hover_offset = 0.0
+        self._hover_direction = 1.0
+        self._facing_left = False
+        self._base_pixmap = None
+        self._wander_dir = -1
+        self._wander_pause_ticks = 0
 
         # UI: Avatar Label
         self.avatar_label = QLabel(self)
@@ -69,13 +75,7 @@ class DesktopPetWidget(QWidget):
         # Place initially at bottom-right corner of screen
         self._place_at_bottom_right()
 
-        # Subtle hovering animation, eye tracking & wandering state
-        self._hover_offset = 0.0
-        self._hover_direction = 1.0
-        self._facing_left = False
-        self._base_pixmap = None
-        self._wander_dir = -1
-        self._wander_pause_ticks = 0
+        # Subtle hovering animation, eye tracking & wandering timer
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._step_hover)
         self._anim_timer.start(80)

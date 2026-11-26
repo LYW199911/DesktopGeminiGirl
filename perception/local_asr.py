@@ -4,7 +4,6 @@ import wave
 import base64
 import tempfile
 import requests
-from typing import Optional
 
 
 def pcm_to_wav_bytes(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1) -> bytes:
@@ -27,7 +26,7 @@ def transcribe_pcm_gemini_audio(pcm_data: bytes, api_key: str, model: str = "gem
         raise RuntimeError("使用 Gemini 原生语音识别需要先配置 Gemini API Key。")
 
     # Ensure we use a model that supports native audio on AI Studio
-    if model in ("gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-4-argon") or "3.8" in model or "argon" in model:
+    if any(k in model.lower() for k in ("3.8", "argon", "hydrogen", "claude", "gpt")):
         model = "gemini-2.5-flash"
 
     wav_bytes = pcm_to_wav_bytes(pcm_data)
@@ -85,7 +84,7 @@ def transcribe_pcm_local(pcm_data: bytes) -> str:
             tmp_path = tf.name
 
         try:
-            from faster_whisper import WhisperModel
+            from faster_whisper import WhisperModel  # type: ignore
             # Use tiny or base model on CPU with int8 for fast local inference
             model = WhisperModel("base", device="cpu", compute_type="int8")
             segments, _ = model.transcribe(tmp_path, beam_size=3, vad_filter=True)
@@ -105,3 +104,4 @@ def transcribe_pcm_local(pcm_data: bytes) -> str:
                 os.remove(tmp_path)
             except Exception:
                 pass
+
