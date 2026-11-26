@@ -1,8 +1,10 @@
 import os
+import json
+import math
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QLabel, QMenu, QApplication
-from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
-from PyQt6.QtGui import QPixmap, QCursor, QAction, QTransform
+from PyQt6.QtCore import Qt, QPoint, QRect, QRectF, pyqtSignal, QTimer
+from PyQt6.QtGui import QPixmap, QCursor, QAction, QTransform, QPainter, QPainterPath
 from .bubble_widget import SpeechBubble
 from .interaction_dialog import InteractionDialog
 from config_manager import ConfigManager
@@ -58,10 +60,19 @@ class DesktopPetWidget(QWidget):
         self._base_pixmap = None
         self._wander_dir = -1
         self._wander_pause_ticks = 0
+        self._walk_phase = 0.0
+        self._pupil_dx = 0.0
+        self._pupil_dy = 0.0
+        self._eye_meta = None
+        self._base_no_pupils = None
+        self._pupil_left = None
+        self._pupil_right = None
+        self._load_eye_demo_assets()
 
-        # UI: Avatar Label
+        # UI: Avatar Label (kept hidden when custom QPainter rendering is active)
         self.avatar_label = QLabel(self)
         self.avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.avatar_label.hide()
         self._load_avatar(avatar_path)
 
         # Bubble (Passive Comic Speech Bubble with Typewriter effect)
@@ -161,60 +172,156 @@ class DesktopPetWidget(QWidget):
         self.move(x, y)
         print(f"[DesktopPet] Placed pet at ({x}, {y})", flush=True)
 
+    def _load_eye_demo_assets(self):
+        eye_dir = os.path.join(ASSETS_DIR, "eye_demo")
+        meta_path = os.path.join(eye_dir, "eye_meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    self._eye_meta = json.load(f)
+                self._base_no_pupils = QPixmap(os.path.join(eye_dir, "base_no_pupils.png"))
+                self._pupil_left = QPixmap(os.path.join(eye_dir, "pupil_left.png"))
+                self._pupil_right = QPixmap(os.path.join(eye_dir, "pupil_right.png"))
+            except Exception as e:
+                print(f"[DesktopPet] Failed to load eye_demo assets: {e}", flush=True)
+                self._eye_meta = None
+
     def _apply_facing_pixmap(self):
-        if not self._base_pixmap:
-            return
-        if self._facing_left:
-            flipped = self._base_pixmap.transformed(QTransform().scale(-1, 1))
-            self.avatar_label.setPixmap(flipped)
-        else:
-            self.avatar_label.setPixmap(self._base_pixmap)
+        self.update()
 
     def _step_hover(self):
-        self._hover_offset += 0.4 * self._hover_direction
-        if abs(self._hover_offset) >= 3:
+        self._hover_offset += 0.35 * self._hover_direction
+        if abs(self._hover_offset) >= 2.5:
             self._hover_direction *= -1
 
-        dx_offset = 0
-        dy_offset = 0
+        # True pupil-only eye tracking (no whole-body jelly wobble)
         if self.config_mgr.get("eye_tracking_enabled", False):
             cursor_pos = QCursor.pos()
-            center = self.mapToGlobal(QPoint(self.width() // 2, self.height() // 3))
+            center = self.mapToGlobal(QPoint(self.width() // 2, int(self.height() * 0.25)))
             dx = cursor_pos.x() - center.x()
             dy = cursor_pos.y() - center.y()
-            dx_offset = max(-6, min(6, int(dx / 80)))
-            dy_offset = max(-4, min(4, int(dy / 80)))
-            # Flip facing direction subtly if cursor is far to the left/right
-            if not self.config_mgr.get("wandering_enabled", False):
-                want_left = dx < -120
-                if want_left != self._facing_left and abs(dx) > 120:
-                    self._facing_left = want_left
-                    self._apply_facing_pixmap()
+            target_dx = max(-4.0, min(4.0, dx / 90.0))
+            target_dy = max(-2.5, min(2.5, dy / 90.0))
+            self._pupil_dx += (target_dx - self._pupil_dx) * 0.25
+            self._pupil_dy += (target_dy - self._pupil_dy) * 0.25
+        else:
+            self._pupil_dx *= 0.8
+            self._pupil_dy *= 0.8
 
-        self.avatar_label.move(6 + dx_offset, int(7 + self._hover_offset + dy_offset))
-
-        # Coopanion-style non-focus-stealing desktop wandering
+        # Procedural walking gait + non-focus-stealing wandering
         if self.config_mgr.get("wandering_enabled", False) and self._drag_pos.isNull():
             if self._wander_pause_ticks > 0:
                 self._wander_pause_ticks -= 1
-                return
-            screen_obj = self.screen() or QApplication.primaryScreen()
-            if screen_obj:
-                geom = screen_obj.availableGeometry()
-                next_x = self.x() + self._wander_dir * 2
-                if next_x <= geom.x() + 10:
-                    next_x = geom.x() + 10
-                    self._wander_dir = 1
-                    self._wander_pause_ticks = 25
-                elif next_x + self.width() >= geom.x() + geom.width() - 10:
-                    next_x = geom.x() + geom.width() - self.width() - 10
-                    self._wander_dir = -1
-                    self._wander_pause_ticks = 25
-                want_left = self._wander_dir < 0
-                if want_left != self._facing_left:
-                    self._facing_left = want_left
-                    self._apply_facing_pixmap()
-                self.move(next_x, self.y())
+                self._walk_phase *= 0.85
+            else:
+                self._walk_phase += 0.32
+                screen_obj = self.screen() or QApplication.primaryScreen()
+                if screen_obj:
+                    geom = screen_obj.availableGeometry()
+                    next_x = self.x() + self._wander_dir * 2
+                    if next_x <= geom.x() + 10:
+                        next_x = geom.x() + 10
+                        self._wander_dir = 1
+                        self._wander_pause_ticks = 25
+                    elif next_x + self.width() >= geom.x() + geom.width() - 10:
+                        next_x = geom.x() + geom.width() - self.width() - 10
+                        self._wander_dir = -1
+                        self._wander_pause_ticks = 25
+                    self._facing_left = self._wander_dir < 0
+                    self.move(next_x, self.y())
+        else:
+            self._walk_phase = 0.0
+
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._base_pixmap or self._base_pixmap.isNull():
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+        w = self._base_pixmap.width()
+        h = self._base_pixmap.height()
+        ox = 6.0
+        oy = 7.0 + self._hover_offset
+
+        is_walking = self.config_mgr.get("wandering_enabled", False) and self._drag_pos.isNull() and self._wander_pause_ticks == 0
+        if is_walking:
+            oy -= abs(math.sin(self._walk_phase)) * 3.0
+
+        use_eye_layers = (
+            self.config_mgr.get("eye_tracking_enabled", False)
+            and self.current_filename == "avatar_standing.png"
+            and self._eye_meta is not None
+            and self._base_no_pupils is not None
+            and not self._base_no_pupils.isNull()
+        )
+        draw_pm = self._base_no_pupils.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation) if use_eye_layers else self._base_pixmap
+
+        if self._facing_left:
+            painter.translate(ox + w / 2.0, oy + h / 2.0)
+            painter.scale(-1.0, 1.0)
+            painter.translate(-(ox + w / 2.0), -(oy + h / 2.0))
+
+        if is_walking:
+            split_ratio = self._eye_meta.get("leg_split_y_ratio", 0.72) if self._eye_meta else 0.72
+            split_y = int(h * split_ratio)
+            # Draw upper body with subtle torso sway
+            painter.save()
+            painter.translate(ox + w / 2.0, oy + split_y)
+            painter.rotate(math.sin(self._walk_phase) * 1.5)
+            painter.translate(-(ox + w / 2.0), -(oy + split_y))
+            painter.drawPixmap(QRectF(ox, oy, w, split_y), draw_pm, QRectF(0, 0, w, split_y))
+            painter.restore()
+
+            # Draw left & right legs with alternating swing
+            leg_h = h - split_y
+            swing = math.sin(self._walk_phase) * 9.0
+            for side, angle in ((0, swing), (1, -swing)):
+                sx = 0 if side == 0 else w / 2.0
+                sw = w / 2.0
+                painter.save()
+                hip_x = ox + sx + sw / 2.0
+                hip_y = oy + split_y
+                painter.translate(hip_x, hip_y)
+                painter.rotate(angle)
+                painter.translate(-hip_x, -hip_y)
+                painter.drawPixmap(QRectF(ox + sx, oy + split_y, sw, leg_h), draw_pm, QRectF(sx, split_y, sw, leg_h))
+                painter.restore()
+        else:
+            painter.drawPixmap(int(ox), int(oy), draw_pm)
+
+        # Draw clipped pupil layers on top of sclera
+        if use_eye_layers:
+            src_w = self._eye_meta["source_w"]
+            src_h = self._eye_meta["source_h"]
+            sx_scale = w / float(src_w)
+            sy_scale = h / float(src_h)
+            pdx = -self._pupil_dx if self._facing_left else self._pupil_dx
+            pdy = self._pupil_dy
+
+            for eye_key, pupil_pm in (("left_eye", self._pupil_left), ("right_eye", self._pupil_right)):
+                if not pupil_pm or pupil_pm.isNull():
+                    continue
+                em = self._eye_meta[eye_key]
+                cx = ox + em["clip_x"] * sx_scale
+                cy = oy + em["clip_y"] * sy_scale
+                cw = em["clip_w"] * sx_scale
+                ch = em["clip_h"] * sy_scale
+
+                painter.save()
+                clip_path = QPainterPath()
+                clip_path.addEllipse(QRectF(cx, cy, cw, ch))
+                painter.setClipPath(clip_path)
+
+                px = ox + em["x"] * sx_scale + pdx
+                py = oy + em["y"] * sy_scale + pdy
+                pw = em["w"] * sx_scale
+                ph = em["h"] * sy_scale
+                painter.drawPixmap(QRectF(px, py, pw, ph), pupil_pm, QRectF(0, 0, pupil_pm.width(), pupil_pm.height()))
+                painter.restore()
 
     def showEvent(self, event):
         super().showEvent(event)

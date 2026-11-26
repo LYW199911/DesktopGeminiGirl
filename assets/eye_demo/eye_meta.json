@@ -1,0 +1,25 @@
+{
+  "source_w": 1517,
+  "source_h": 2530,
+  "left_eye": {
+    "x": 546,
+    "y": 506,
+    "w": 166,
+    "h": 151,
+    "clip_x": 546,
+    "clip_y": 506,
+    "clip_w": 166,
+    "clip_h": 151
+  },
+  "right_eye": {
+    "x": 804,
+    "y": 506,
+    "w": 166,
+    "h": 151,
+    "clip_x": 804,
+    "clip_y": 506,
+    "clip_w": 166,
+    "clip_h": 151
+  },
+  "leg_split_y_ratio": 0.72
+}
