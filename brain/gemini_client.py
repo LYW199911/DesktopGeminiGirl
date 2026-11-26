@@ -624,7 +624,7 @@ class GeminiCritiqueEngine:
         custom_prompt = self.config_mgr.get("custom_system_prompt", "")
         persona_style = self.config_mgr.get("persona_style", "元气毒舌 (默认)")
 
-        history_context = self.context_memory.get_recent_context(scene, window_title, max_items=2)
+        history_context = self.context_memory.get_recent_context(scene, window_title, max_items=6)
         if history_context:
             self.logger.memory(f"提取到 {len(history_context)} 条前情记忆承接上下文: \"{history_context[-1][:20]}...\"")
 
@@ -668,7 +668,7 @@ class GeminiCritiqueEngine:
         persona_style = self.config_mgr.get("persona_style", "元气毒舌 (默认)")
 
         self.context_memory.record_user_comment(scene, window_title, user_comment)
-        history_context = self.context_memory.get_recent_context(scene, window_title, max_items=3)
+        history_context = self.context_memory.get_recent_context(scene, window_title, max_items=8)
         self.logger.memory(f"主人在气泡吐槽: \"{user_comment}\" (上下文记忆 {len(history_context)} 条)")
 
         sys_prompt = get_system_prompt(pet_name, catchphrases, custom_prompt, persona_style=persona_style)

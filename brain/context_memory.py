@@ -82,7 +82,7 @@ class ContextMemoryManager:
 
         self.save()
 
-    def get_recent_context(self, scene: str, window_title: str, max_items: int = 2) -> List[str]:
+    def get_recent_context(self, scene: str, window_title: str, max_items: int = 6) -> List[str]:
         """
         Extract up to `max_items` previous critiques/dialogues for the current window or scene.
         Extremely lightweight: ~20-35 tokens total, strictly caps token expenditure

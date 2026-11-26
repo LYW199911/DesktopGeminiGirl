@@ -65,9 +65,17 @@ class DynamicDesktopPetWidget(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self._gaze_offset_x = 0.0
+        self._gaze_offset_y = 0.0
+        self._facing_left = False
+        self._wander_dir = -1
+        self._wander_pause_ticks = 0
 
         target_h = int(self.config_mgr.get("target_height", 250))
         self.scale_factor = max(0.35, min(0.85, target_h / 380.0))
@@ -330,6 +338,42 @@ class DynamicDesktopPetWidget(QWidget):
         self.interaction_dialog.open_for_critique(last_text, self.pos())
 
     def _step_60fps(self):
+        # Eye / gaze micro-parallax tracking
+        if self.config_mgr.get("eye_tracking_enabled", False):
+            cursor_pos = QCursor.pos()
+            center = self.mapToGlobal(QPoint(self.width() // 2, self.height() // 3))
+            dx = cursor_pos.x() - center.x()
+            dy = cursor_pos.y() - center.y()
+            target_gx = max(-7.0, min(7.0, dx / 80.0))
+            target_gy = max(-4.0, min(4.0, dy / 80.0))
+            self._gaze_offset_x += (target_gx - self._gaze_offset_x) * 0.15
+            self._gaze_offset_y += (target_gy - self._gaze_offset_y) * 0.15
+            if not self.config_mgr.get("wandering_enabled", False) and abs(dx) > 120:
+                self._facing_left = dx < 0
+        else:
+            self._gaze_offset_x *= 0.85
+            self._gaze_offset_y *= 0.85
+
+        # Coopanion-style non-focus-stealing wandering
+        if self.config_mgr.get("wandering_enabled", False) and not self.is_dragging and self.current_action_key == "idle":
+            if self._wander_pause_ticks > 0:
+                self._wander_pause_ticks -= 1
+            else:
+                screen_obj = self.screen() or QApplication.primaryScreen()
+                if screen_obj:
+                    geom = screen_obj.availableGeometry()
+                    next_x = self.x() + self._wander_dir
+                    if next_x <= geom.x() + 10:
+                        next_x = geom.x() + 10
+                        self._wander_dir = 1
+                        self._wander_pause_ticks = 120
+                    elif next_x + self.width() >= geom.x() + geom.width() - 10:
+                        next_x = geom.x() + geom.width() - self.width() - 10
+                        self._wander_dir = -1
+                        self._wander_pause_ticks = 120
+                    self._facing_left = self._wander_dir < 0
+                    self.move(next_x, self.y())
+
         now = time.perf_counter()
         dt = min(0.05, now - self.last_update_time)
         self.last_update_time = now
@@ -499,9 +543,10 @@ class DynamicDesktopPetWidget(QWidget):
         cy = self.height() - 15.0
 
         transform = QTransform()
-        transform.translate(cx, cy)
+        transform.translate(cx + self._gaze_offset_x, cy + self._gaze_offset_y)
         transform.rotate(self.tilt_angle)
-        transform.scale(self.scale_x_ease, self.scale_y_ease)
+        flip_x = -1.0 if self._facing_left else 1.0
+        transform.scale(flip_x * self.scale_x_ease, self.scale_y_ease)
         transform.translate(-cx, -cy)
         painter.setTransform(transform)
 
