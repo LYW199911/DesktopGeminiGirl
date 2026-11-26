@@ -1,0 +1,12 @@
+{
+  "Source": "gemini_generated_video_bee1f8ba.mp4",
+  "FrameWidth": 640,
+  "FrameHeight": 360,
+  "Columns": 8,
+  "Rows": 8,
+  "FrameCount": 64,
+  "SampleFps": 20,
+  "Alpha": "RGBA",
+  "ImageFormat": "webp",
+  "EncodingQuality": 92
+}

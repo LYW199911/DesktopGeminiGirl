@@ -38,6 +38,7 @@ from tts.edge_speaker import EdgeSpeaker
 from perception.window_tracker import get_foreground_window_info
 from perception.screen_capture import capture_screen_jpeg
 from perception.hotkey_listener import GlobalHotkeyManager
+from perception.voice_controller import VoiceInputMixin
 
 from ui.dynamic_pet_widget import DynamicDesktopPetWidget
 from ui.tray_icon import DesktopPetTray
@@ -46,9 +47,11 @@ from version import VERSION
 
 DYNAMIC_VERSION = f"{VERSION}-dynamic"
 
-class DynamicPetController(QObject):
+class DynamicPetController(QObject, VoiceInputMixin):
     critique_ready = pyqtSignal(str)
     speech_started = pyqtSignal(int)
+    voice_toggle_requested = pyqtSignal()
+    voice_result_ready = pyqtSignal(bool, str)
 
     def __init__(self, pet_widget: DynamicDesktopPetWidget, tray: DesktopPetTray, settings_win: SettingsWindow):
         super().__init__()
@@ -83,6 +86,7 @@ class DynamicPetController(QObject):
         # Connect signals
         self.critique_ready.connect(self._on_critique_ready)
         self.speech_started.connect(self._on_speech_started)
+        self._init_voice_input()
 
         self.pet.open_settings.connect(self.show_settings)
         self.pet.request_critique.connect(self.trigger_manual_critique)
@@ -90,6 +94,8 @@ class DynamicPetController(QObject):
         self.pet.toggle_tts.connect(self.toggle_tts)
         self.pet.toggle_auto.connect(self.toggle_auto)
         self.pet.quit_app.connect(self.quit)
+        self.pet.focus_arrived.connect(self._on_focus_arrived)
+        self._pending_focus_ctx = None
 
         self.tray.open_settings.connect(self.show_settings)
         self.tray.open_update_dialog.connect(self.settings_win.open_update_dialog)
@@ -108,7 +114,8 @@ class DynamicPetController(QObject):
             on_trigger_critique=self.trigger_manual_critique,
             on_toggle_mute=self.toggle_tts,
             on_switch_outfit=self.pet.cycle_next_outfit,
-            on_toggle_voice_input=lambda: None
+            on_toggle_voice_input=self.voice_toggle_requested.emit,
+            voice_hotkey=self.config_mgr.get("voice_hotkey", "Ctrl+F1")
         )
         self.hotkeys.start()
 
@@ -171,9 +178,11 @@ class DynamicPetController(QObject):
         new_fps = int(cfg.get("dynamic_fps", 15))
         self.pet.set_dynamic_fps(new_fps)
         self.pet.reload_textures()
+        if hasattr(self, "hotkeys"):
+            self.hotkeys.update_voice_hotkey(cfg.get("voice_hotkey", "Ctrl+F1"))
 
     def _check_desktop_state(self):
-        if not self.auto_mode or self._is_analyzing:
+        if not self.auto_mode or self._is_analyzing or self._voice_recording or self._voice_transcribing:
             return
         info = get_foreground_window_info()
         if info.get("is_self", False):
@@ -186,8 +195,47 @@ class DynamicPetController(QObject):
             return
 
         if self.rate_limiter.should_trigger_auto(scene, title):
+            legacy_wander = bool(self.config_mgr.get("wandering_enabled", False))
+            walk_on = bool(self.config_mgr.get("walk_enabled", legacy_wander))
+            fly_on = bool(self.config_mgr.get("jetpack_fly_enabled", legacy_wander))
+            if (walk_on or fly_on) and not getattr(self.pet, "_nav_state", None):
+                import random
+                from perception.focus_navigator import pick_focus_target
+                screen_obj = self.pet.screen() or QGuiApplication.primaryScreen()
+                if screen_obj:
+                    geom = screen_obj.availableGeometry()
+                    prefer_walk = (not fly_on) or (walk_on and random.random() < 0.4)
+                    tx, ty, sub_rect = pick_focus_target(
+                        info.get("rect"), geom.x(), geom.y(), geom.width(), geom.height(),
+                        self.pet.width(), self.pet.height(), current_y=self.pet.y(), prefer_bottom_walk=prefer_walk
+                    )
+                    if not walk_on and abs(ty - self.pet.y()) < 140:
+                        # Only jetpack enabled: critique directly if focus is on same horizontal level
+                        pass
+                    else:
+                        self.rate_limiter.record_critique(scene, title)
+                        self._pending_focus_ctx = (scene, title, proc)
+                        self.logger.scene(f"准备移动至焦点局部区域观察: [{scene}] {title} -> ({tx}, {ty}) 区域={sub_rect}")
+                        self.pet.move_to_focus(tx, ty, focus_rect=sub_rect)
+                        return
             self.logger.scene(f"自动捕获场景: [{scene}] 窗口: {title} ({proc})")
             self._start_critique_task(scene, title, proc, rect=info.get("rect"))
+
+    def _on_focus_arrived(self, sub_rect):
+        if self._is_analyzing or self._voice_recording or self._voice_transcribing:
+            self._pending_focus_ctx = None
+            return
+        ctx = self._pending_focus_ctx
+        self._pending_focus_ctx = None
+        if ctx:
+            scene, title, proc = ctx
+        else:
+            info = get_foreground_window_info()
+            scene = info.get("scene", "general")
+            title = info.get("title", "")
+            proc = info.get("process", "")
+        self.logger.scene(f"抵达焦点位置，开始局部锐评: [{scene}] {title} 区域={sub_rect}")
+        self._start_critique_task(scene, title, proc, rect=sub_rect, force=True)
 
     def trigger_manual_critique(self):
         if self._is_analyzing:
@@ -222,12 +270,14 @@ class DynamicPetController(QObject):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def handle_user_reply(self, user_comment: str):
+    def handle_user_reply(self, user_comment: str, context: dict = None):
         if self._is_analyzing:
             return
         self._is_analyzing = True
         self.pet.set_thinking(True)
-        info = get_foreground_window_info()
+        info = context or get_foreground_window_info()
+        if info.get("is_self", False):
+            info["scene"] = "general"
         self.logger.info(f"主人回复互动: \"{user_comment}\"")
 
         def worker():
@@ -300,6 +350,7 @@ class DynamicPetController(QObject):
 
     def quit(self):
         self.logger.info("退出动态版哈Gemi")
+        self._cleanup_voice_input()
         try:
             self.hotkeys.stop()
         except:

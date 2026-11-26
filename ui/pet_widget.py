@@ -1,12 +1,14 @@
 import os
 import json
 import math
+import time
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QLabel, QMenu, QApplication
 from PyQt6.QtCore import Qt, QPoint, QRect, QRectF, pyqtSignal, QTimer
 from PyQt6.QtGui import QPixmap, QCursor, QAction, QTransform, QPainter, QPainterPath
 from .bubble_widget import SpeechBubble
 from .interaction_dialog import InteractionDialog
+from .mic_overlay import draw_listening_mic
 from config_manager import ConfigManager
 from app_paths import ASSETS_DIR
 
@@ -31,6 +33,8 @@ class DesktopPetWidget(QWidget):
     toggle_tts = pyqtSignal()
     toggle_auto = pyqtSignal()
     quit_app = pyqtSignal()
+    voice_input_start = pyqtSignal()
+    voice_input_stop = pyqtSignal()
 
     def __init__(self, avatar_path: str = None, target_height: int = 250, parent=None):
         super().__init__(parent)
@@ -90,6 +94,12 @@ class DesktopPetWidget(QWidget):
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._step_hover)
         self._anim_timer.start(80)
+
+        self._is_voice_listening = False
+        self._right_long_pressed = False
+        self._right_press_timer = QTimer(self)
+        self._right_press_timer.setSingleShot(True)
+        self._right_press_timer.timeout.connect(self._on_right_long_press)
 
     def _load_avatar(self, path: str):
         self.avatar_path = path
@@ -317,6 +327,17 @@ class DesktopPetWidget(QWidget):
                 painter.drawPixmap(QRectF(px, py, pw, ph), pupil_pm, QRectF(0, 0, pupil_pm.width(), pupil_pm.height()))
                 painter.restore()
 
+        if self._is_voice_listening:
+            draw_listening_mic(painter, self.width(), time.perf_counter())
+
+    def set_voice_listening(self, active: bool):
+        self._is_voice_listening = bool(active)
+        self.update()
+
+    def _on_right_long_press(self):
+        self._right_long_pressed = True
+        self.voice_input_start.emit()
+
     def showEvent(self, event):
         super().showEvent(event)
         self.raise_()
@@ -366,7 +387,8 @@ class DesktopPetWidget(QWidget):
             self.cycle_next_outfit()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
-            self._show_context_menu(event.globalPosition().toPoint())
+            self._right_long_pressed = False
+            self._right_press_timer.start(350)
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -390,6 +412,14 @@ class DesktopPetWidget(QWidget):
                 "pet_pos_x": self.x(),
                 "pet_pos_y": self.y()
             })
+            event.accept()
+        elif event.button() == Qt.MouseButton.RightButton:
+            self._right_press_timer.stop()
+            if self._right_long_pressed:
+                self._right_long_pressed = False
+                self.voice_input_stop.emit()
+            else:
+                self._show_context_menu(event.globalPosition().toPoint())
             event.accept()
 
     def mouseDoubleClickEvent(self, event):

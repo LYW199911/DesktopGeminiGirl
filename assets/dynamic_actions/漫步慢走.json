@@ -1,0 +1,13 @@
+{
+  "Source": "Seamless looping walk cycle animation of this cute.mp4",
+  "FrameWidth": 640,
+  "FrameHeight": 360,
+  "Columns": 8,
+  "Rows": 15,
+  "FrameCount": 120,
+  "SampleFps": 16,
+  "Alpha": "RGBA",
+  "ImageFormat": "webp",
+  "EncodingQuality": 78,
+  "AlphaQuality": 85
+}

@@ -15,6 +15,7 @@ from app_paths import ASSETS_DIR
 from config_manager import ConfigManager
 from ui.dynamic_bubble_widget import DynamicSpeechBubble
 from ui.interaction_dialog import InteractionDialog
+from ui.mic_overlay import draw_listening_mic
 
 DYNAMIC_ACTIONS_DIR = os.path.join(ASSETS_DIR, "dynamic_actions")
 
@@ -25,7 +26,11 @@ ACTION_DEFS = {
     "dangling": {"file": "被鼠标拖拽悬空反馈", "loop": True, "title": "悬空挣扎"},
     "coding": {"file": "写代码", "loop": True, "title": "写代码"},
     "shocked": {"file": "被吓一跳", "loop": False, "title": "被吓一跳"},
-    "walk": {"file": "漫步走路", "loop": True, "title": "漫步走路"}
+    "walk": {"file": "漫步走路", "loop": True, "title": "轻快快走"},
+    "walk_slow": {"file": "漫步慢走", "loop": True, "title": "悠闲慢走"},
+    "jetpack_start": {"file": "喷气背包-起飞准备", "loop": False, "title": "喷气起飞"},
+    "jetpack_fly": {"file": "喷气背包-飞行循环", "loop": True, "title": "喷气飞行"},
+    "jetpack_end": {"file": "喷气背包-降落收起", "loop": False, "title": "喷气降落"}
 }
 
 class FloatingParticle:
@@ -58,6 +63,9 @@ class DynamicDesktopPetWidget(QWidget):
     toggle_tts = pyqtSignal()
     toggle_auto = pyqtSignal()
     quit_app = pyqtSignal()
+    voice_input_start = pyqtSignal()
+    voice_input_stop = pyqtSignal()
+    focus_arrived = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,7 +84,22 @@ class DynamicDesktopPetWidget(QWidget):
         self._gaze_offset_y = 0.0
         self._facing_left = False
         self._wander_dir = -1
-        self._wander_pause_ticks = 0
+        self._wander_pause_ticks = random.randint(360, 900)
+        self._wander_move_ticks = 0
+        self._wander_mode = "walk_slow"
+        self._wander_step_acc = 0.0
+        self._bubble_mirrored_right = False
+        self._nav_state = None  # None, "jetpack_start", "jetpack_fly", "jetpack_end", "walking"
+        self._nav_target = None
+        self._nav_focus_rect = None
+        self._nav_walk_action = "walk_slow"
+        self._nav_fx = 0.0
+        self._nav_fy = 0.0
+        self._is_voice_listening = False
+        self._right_long_pressed = False
+        self._right_press_timer = QTimer(self)
+        self._right_press_timer.setSingleShot(True)
+        self._right_press_timer.timeout.connect(self._on_right_long_press)
 
         target_h = int(self.config_mgr.get("target_height", 250))
         self.scale_factor = max(0.35, min(0.85, target_h / 380.0))
@@ -297,27 +320,36 @@ class DynamicDesktopPetWidget(QWidget):
         self.set_action("happy")
 
     def _calc_bubble_pos(self, bw: int, bh: int) -> tuple[int, int]:
-        """Calculates exact bubble position so comic tail tip points directly at the cat ear."""
-        # Catgirl's horizontal center in global coordinates
+        """Calculates exact bubble position so comic tail tip points directly at the cat ear, mirroring smoothly near left edge."""
         head_cx = self.x() + int(self.width() * 0.5)
-        # Catgirl's head top in global coordinates
         head_top_y = self.y() + int(24 * self.scale_factor)
 
-        # In DynamicSpeechBubble, tail tip is at `bx + bw - 14`
-        # We want the tail tip to point at catgirl's left cat ear: `head_cx - 8`
-        bx = (head_cx - 8) - (bw - 14)
-        # Tail tip touches right above the ear
+        # Left-side placement: right-bottom tail tip at `bx + bw - 14` points at `head_cx - 8`
+        bx_left = (head_cx - 8) - (bw - 14)
+        # Right-side mirrored placement: left-bottom tail tip at `bx + 14` points at `head_cx + 8`
+        bx_right = (head_cx + 8) - 14
         by = head_top_y - bh + 14
 
         screen = self.screen() or QApplication.primaryScreen()
         if screen:
             geom = screen.availableGeometry()
-            # If overflowing left screen edge, flip bubble to the right of pet
+            # Hysteresis so bubble mirrors to right when near left edge and cleanly returns left when space is sufficient
+            if not self._bubble_mirrored_right and bx_left < geom.x() + 10:
+                self._bubble_mirrored_right = True
+            elif self._bubble_mirrored_right and bx_left >= geom.x() + 45:
+                self._bubble_mirrored_right = False
+
+            bx = bx_right if self._bubble_mirrored_right else bx_left
+            if bx + bw > geom.x() + geom.width() - 10:
+                bx = geom.x() + geom.width() - bw - 10
             if bx < geom.x() + 10:
-                bx = head_cx + 15
-            # If overflowing top screen edge, place below pet
+                bx = geom.x() + 10
             if by < geom.y() + 10:
                 by = self.y() + self.height() - 20
+        else:
+            bx = bx_right if self._bubble_mirrored_right else bx_left
+
+        self.bubble.set_tail_side("left" if self._bubble_mirrored_right else "right")
         return bx, by
 
     def show_critique(self, text: str, duration_ms: Optional[int] = None):
@@ -338,6 +370,32 @@ class DynamicDesktopPetWidget(QWidget):
         self.bubble.hide()
         self.interaction_dialog.open_for_critique(last_text, self.pos())
 
+    def move_to_focus(self, target_x: int, target_y: int, focus_rect=None):
+        """Navigates purposefully to (target_x, target_y) via jetpack flight (if Y changes) or walking, then emits focus_arrived."""
+        if self.is_dragging:
+            return
+        dx = target_x - self.x()
+        dy = target_y - self.y()
+        self._nav_target = (int(target_x), int(target_y))
+        self._nav_focus_rect = focus_rect
+        self._nav_fx = float(self.x())
+        self._nav_fy = float(self.y())
+        if abs(dx) > 4:
+            self._facing_left = dx < 0
+
+        if abs(dy) >= 140:
+            self._nav_state = "jetpack_start"
+            self.set_action("jetpack_start")
+        elif abs(dx) > 12:
+            self._nav_state = "walking"
+            self._nav_target = (int(target_x), self.y())
+            self._nav_walk_action = "walk" if abs(dx) > 260 else "walk_slow"
+            self.set_action(self._nav_walk_action)
+        else:
+            self._nav_state = None
+            if focus_rect is not None:
+                self.focus_arrived.emit(focus_rect)
+
     def _step_60fps(self):
         # Clean facing-direction tracking (no whole-sprite jelly wobble)
         self._gaze_offset_x = 0.0
@@ -349,30 +407,93 @@ class DynamicDesktopPetWidget(QWidget):
             if abs(dx) > 100:
                 self._facing_left = dx < 0
 
-        # Coopanion-style non-focus-stealing wandering with dedicated walk animation
-        if self.config_mgr.get("wandering_enabled", False) and not self.is_dragging and self.current_action_key in ("idle", "walk"):
+        # Purposeful focus navigation (jetpack 2D flight or targeted walk)
+        legacy_wander = bool(self.config_mgr.get("wandering_enabled", False))
+        walk_on = bool(self.config_mgr.get("walk_enabled", legacy_wander))
+        fly_on = bool(self.config_mgr.get("jetpack_fly_enabled", legacy_wander))
+
+        if self._nav_state and not self.is_dragging and self._nav_target:
+            if (self._nav_state in ("jetpack_start", "jetpack_fly", "jetpack_end") and not fly_on) or (
+                self._nav_state == "walking" and not walk_on
+            ):
+                self._nav_state = None
+                self._nav_target = None
+                self._nav_focus_rect = None
+                self.set_action("idle")
+                return
+            tx, ty = self._nav_target
+            if self._nav_state == "jetpack_fly":
+                dx = tx - self._nav_fx
+                dy = ty - self._nav_fy
+                dist = math.hypot(dx, dy)
+                if dist <= 3.5:
+                    self.move(tx, ty)
+                    self._nav_state = "jetpack_end"
+                    self.set_action("jetpack_end")
+                else:
+                    speed = min(3.4, max(1.2, dist * 0.08))
+                    self._nav_fx += (dx / dist) * speed
+                    self._nav_fy += (dy / dist) * speed
+                    if abs(dx) > 4:
+                        self._facing_left = dx < 0
+                    self.move(int(round(self._nav_fx)), int(round(self._nav_fy)))
+                if self.bubble.isVisible():
+                    bx, by = self._calc_bubble_pos(self.bubble.width(), self.bubble.height())
+                    self.bubble.move(bx, by)
+            elif self._nav_state == "walking":
+                dx = tx - self._nav_fx
+                if abs(dx) <= 2.5:
+                    self.move(tx, self.y())
+                    rect = self._nav_focus_rect
+                    self._nav_state = None
+                    self._nav_target = None
+                    self._nav_focus_rect = None
+                    self.set_action("idle")
+                    self._wander_pause_ticks = random.randint(900, 2100)
+                    if rect is not None:
+                        self.focus_arrived.emit(rect)
+                else:
+                    step_speed = 1.5 if self._nav_walk_action == "walk" else 0.55
+                    self._nav_fx += step_speed if dx > 0 else -step_speed
+                    self._facing_left = dx < 0
+                    self.move(int(round(self._nav_fx)), self.y())
+                    if self.bubble.isVisible():
+                        bx, by = self._calc_bubble_pos(self.bubble.width(), self.bubble.height())
+                        self.bubble.move(bx, by)
+        # Occasional wandering: mostly standing still (idle), occasionally strolling or flying to a focus spot
+        elif (walk_on or fly_on) and not self.is_dragging and self.current_action_key in ("idle", "walk", "walk_slow"):
             if self._wander_pause_ticks > 0:
                 self._wander_pause_ticks -= 1
-                if self.current_action_key == "walk":
+                if self.current_action_key in ("walk", "walk_slow"):
                     self.set_action("idle")
+                if self._wander_pause_ticks == 0:
+                    screen_obj = self.screen() or QApplication.primaryScreen()
+                    if screen_obj:
+                        geom = screen_obj.availableGeometry()
+                        bottom_y = geom.y() + geom.height() - self.height() - 5
+                        # If perched high up and flying is enabled, fly back down to bottom rest area
+                        if fly_on and self.y() < bottom_y - 140 and random.random() < 0.65:
+                            tx = max(geom.x() + 12, min(geom.x() + geom.width() - self.width() - 12, self.x() + random.randint(-120, 120)))
+                            self.move_to_focus(tx, bottom_y, focus_rect=None)
+                        else:
+                            try:
+                                from perception.window_tracker import get_foreground_window_info
+                                from perception.focus_navigator import pick_focus_target
+                                winfo = get_foreground_window_info()
+                                wrect = None if winfo.get("is_self") else winfo.get("rect")
+                                use_walk = (not fly_on) or (walk_on and random.random() < 0.65 and self.y() >= bottom_y - 30)
+                                tx, ty, _ = pick_focus_target(wrect, geom.x(), geom.y(), geom.width(), geom.height(), self.width(), self.height(), current_y=self.y(), prefer_bottom_walk=use_walk)
+                                if not walk_on and abs(ty - self.y()) < 140:
+                                    # Only jetpack enabled: pick a vertical jump target
+                                    ty = geom.y() + 40 if self.y() > geom.y() + geom.height() // 2 else bottom_y
+                                self.move_to_focus(tx, ty, focus_rect=None)
+                            except Exception:
+                                self._wander_pause_ticks = random.randint(900, 1800)
             else:
-                if self.current_action_key != "walk":
-                    self.set_action("walk")
-                screen_obj = self.screen() or QApplication.primaryScreen()
-                if screen_obj:
-                    geom = screen_obj.availableGeometry()
-                    next_x = self.x() + self._wander_dir
-                    if next_x <= geom.x() + 10:
-                        next_x = geom.x() + 10
-                        self._wander_dir = 1
-                        self._wander_pause_ticks = 120
-                    elif next_x + self.width() >= geom.x() + geom.width() - 10:
-                        next_x = geom.x() + geom.width() - self.width() - 10
-                        self._wander_dir = -1
-                        self._wander_pause_ticks = 120
-                    self._facing_left = self._wander_dir < 0
-                    self.move(next_x, self.y())
-        elif self.current_action_key == "walk":
+                self._wander_pause_ticks = random.randint(900, 2100)
+                if self.current_action_key in ("walk", "walk_slow"):
+                    self.set_action("idle")
+        elif self.current_action_key in ("walk", "walk_slow") and not self._nav_state:
             self.set_action("idle")
 
         now = time.perf_counter()
@@ -393,6 +514,20 @@ class DynamicDesktopPetWidget(QWidget):
                     if act["loop"]:
                         self.current_frame = 0
                     else:
+                        if self.current_action_key == "jetpack_start" and self._nav_state == "jetpack_start":
+                            self._nav_state = "jetpack_fly"
+                            self.set_action("jetpack_fly")
+                            return
+                        elif self.current_action_key == "jetpack_end" and self._nav_state == "jetpack_end":
+                            rect = self._nav_focus_rect
+                            self._nav_state = None
+                            self._nav_target = None
+                            self._nav_focus_rect = None
+                            self.set_action("idle")
+                            self._wander_pause_ticks = random.randint(900, 2100)
+                            if rect is not None:
+                                self.focus_arrived.emit(rect)
+                            return
                         self.set_action("idle")
                         return
 
@@ -414,9 +549,20 @@ class DynamicDesktopPetWidget(QWidget):
 
         self.update()
 
+    def set_voice_listening(self, active: bool):
+        self._is_voice_listening = bool(active)
+        self.update()
+
+    def _on_right_long_press(self):
+        self._right_long_pressed = True
+        self.voice_input_start.emit()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.is_dragging = True
+            self._nav_state = None
+            self._nav_target = None
+            self._nav_focus_rect = None
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self.last_global_pos = event.globalPosition().toPoint()
             self.velocity_x = 0.0
@@ -426,7 +572,8 @@ class DynamicDesktopPetWidget(QWidget):
             self.cycle_next_outfit()
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
-            self._show_context_menu(event.globalPosition().toPoint())
+            self._right_long_pressed = False
+            self._right_press_timer.start(350)
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -456,6 +603,14 @@ class DynamicDesktopPetWidget(QWidget):
                 "pet_pos_x": self.x(),
                 "pet_pos_y": self.y()
             })
+            event.accept()
+        elif event.button() == Qt.MouseButton.RightButton:
+            self._right_press_timer.stop()
+            if self._right_long_pressed:
+                self._right_long_pressed = False
+                self.voice_input_stop.emit()
+            else:
+                self._show_context_menu(event.globalPosition().toPoint())
             event.accept()
 
     def mouseDoubleClickEvent(self, event):
@@ -579,3 +734,6 @@ class DynamicDesktopPetWidget(QWidget):
             painter.setFont(font)
             painter.setPen(color)
             painter.drawText(int(p.x), int(p.y), p.char)
+
+        if self._is_voice_listening:
+            draw_listening_mic(painter, self.width(), self.time_counter)

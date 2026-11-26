@@ -85,6 +85,8 @@ class DesktopPetController(QObject):
         self.pet.toggle_tts.connect(self.toggle_tts)
         self.pet.toggle_auto.connect(self.toggle_auto)
         self.pet.quit_app.connect(self.quit)
+        self.pet.voice_input_start.connect(self._start_voice_input)
+        self.pet.voice_input_stop.connect(self._finish_voice_recording)
 
         # Tray signals
         self.tray.open_settings.connect(self.show_settings)
@@ -105,7 +107,8 @@ class DesktopPetController(QObject):
             on_trigger_critique=self.trigger_manual_critique,
             on_toggle_mute=self.toggle_tts,
             on_switch_outfit=self.pet.cycle_next_outfit,
-            on_toggle_voice_input=self.voice_toggle_requested.emit
+            on_toggle_voice_input=self.voice_toggle_requested.emit,
+            voice_hotkey=self.config_mgr.get("voice_hotkey", "Ctrl+F1")
         )
         self.voice_timeout_timer = QTimer(self)
         self.voice_timeout_timer.setSingleShot(True)
@@ -176,6 +179,8 @@ class DesktopPetController(QObject):
         )
         if hasattr(self.engine, "antigravity_helper"):
             self.engine.antigravity_helper.reload()
+        if hasattr(self, "hotkeys"):
+            self.hotkeys.update_voice_hotkey(cfg.get("voice_hotkey", "Ctrl+F1"))
 
         # Update Pet size & appearance
         new_height = int(cfg.get("target_height", 250))
@@ -233,7 +238,13 @@ class DesktopPetController(QObject):
     def _toggle_voice_input(self):
         if self._voice_recording:
             self._finish_voice_recording()
+        else:
+            self._start_voice_input()
+
+    def _start_voice_input(self):
+        if self._voice_recording:
             return
+        hk_label = self.config_mgr.get("voice_hotkey", "Ctrl+F1") or "Ctrl+F1"
         if self._voice_transcribing:
             self._show_voice_status("喵呜，正在识别刚才的语音，请稍等一下~")
             return
@@ -243,7 +254,7 @@ class DesktopPetController(QObject):
         asr_provider = self.config_mgr.get("asr_provider", "tencent").strip()
         if asr_provider == "tencent":
             if not self.config_mgr.get("tencent_secret_id", "").strip() or not self.config_mgr.get("tencent_secret_key", "").strip():
-                self._show_voice_status("请先在设置中心填写腾讯云 SecretId 和 SecretKey（或切换为 Gemini 原生/本地语音识别），再按 Ctrl+F1 录音喵~")
+                self._show_voice_status(f"请先在设置中心填写腾讯云 SecretId 和 SecretKey（或切换为 Gemini 原生/本地语音识别），再按 {hk_label} 录音喵~")
                 self.show_settings()
                 return
         elif asr_provider == "gemini_audio":
@@ -261,6 +272,7 @@ class DesktopPetController(QObject):
                 self._voice_context["rect"] = None
             self._voice_chunks = []
             self._voice_recording = True
+            self.pet.set_voice_listening(True)
 
             def collect_audio(indata, frames, time_info, status):
                 self._voice_chunks.append(indata.copy().tobytes())
@@ -273,10 +285,11 @@ class DesktopPetController(QObject):
             )
             self._voice_stream.start()
             self.voice_timeout_timer.start(55000)
-            self._show_voice_status("🎙 正在录音… 再按 Ctrl+F1 结束并识别（最长 55 秒）")
+            self._show_voice_status(f"🎙 正在倾听… 按 {hk_label} 或松开右键即可结束并识别")
             self.logger.info("语音输入开始录音。")
         except Exception as exc:
             self._voice_recording = False
+            self.pet.set_voice_listening(False)
             if self._voice_stream is not None:
                 try:
                     self._voice_stream.close()
@@ -291,6 +304,7 @@ class DesktopPetController(QObject):
             return
         self.voice_timeout_timer.stop()
         self._voice_recording = False
+        self.pet.set_voice_listening(False)
 
         stream = self._voice_stream
         self._voice_stream = None

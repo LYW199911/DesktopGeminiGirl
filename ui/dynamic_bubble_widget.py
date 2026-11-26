@@ -131,13 +131,24 @@ class DynamicSpeechBubble(QWidget):
         self.hide_timer.setSingleShot(True)
         self.hide_timer.timeout.connect(self.hide_bubble)
 
+        self._tail_side = "right"
+
+    def set_tail_side(self, side: str):
+        if side in ("left", "right") and self._tail_side != side:
+            self._tail_side = side
+            self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         cr = self.card.geometry()
-        tail_start_x = cr.right() - 28
-        tail_tip_x = cr.right() - 14
+        if self._tail_side == "left":
+            tail_start_x = cr.left() + 14
+            tail_tip_x = cr.left() + 14
+        else:
+            tail_start_x = cr.right() - 28
+            tail_tip_x = cr.right() - 14
         tail_tip_y = cr.bottom() + 10
 
         tail_poly = QPolygon([

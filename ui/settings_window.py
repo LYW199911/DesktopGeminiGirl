@@ -3,13 +3,13 @@ import shutil
 import time
 from typing import Callable, Optional
 from PyQt6.QtWidgets import (
-    QWidget, QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QApplication, QWidget, QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QSlider, QSpinBox, QCheckBox, QComboBox,
     QTextEdit, QTextBrowser, QFileDialog, QMessageBox, QGroupBox, QScrollArea,
-    QFrame
+    QFrame, QSizePolicy, QKeySequenceEdit
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon, QPixmap, QTextCursor
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QObject, QEvent
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QTextCursor, QKeySequence
 
 from config_manager import ConfigManager
 from log_manager import get_log_manager
@@ -68,9 +68,24 @@ GEMINI_TTS_MODELS = [
     ("gemini-3.8-flash-lite-tts", "gemini-3.8-flash-lite-tts (极速低延迟轻量版)"),
 ]
 
+class _NoWheelFilter(QObject):
+    """Prevents mouse-wheel scrolling from accidentally changing sliders/combos/spinboxes and forwards scroll to parent QScrollArea."""
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Wheel:
+            parent = obj.parent()
+            while parent is not None:
+                if isinstance(parent, QScrollArea):
+                    QApplication.sendEvent(parent.viewport(), event)
+                    break
+                parent = parent.parent()
+            return True
+        return super().eventFilter(obj, event)
+
+
 class SettingsWindow(QMainWindow):
     settings_applied = pyqtSignal()
     request_manual_critique = pyqtSignal()
+    _models_fetched = pyqtSignal(list, str, bool)
 
     def __init__(self, parent=None, is_dynamic: bool = False):
         super().__init__(parent)
@@ -91,6 +106,13 @@ class SettingsWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
 
         self._init_ui()
+        self._models_fetched.connect(self._on_models_fetched)
+        self._no_wheel_filter = _NoWheelFilter(self)
+        for w in self.findChildren((QSlider, QComboBox, QSpinBox)):
+            w.installEventFilter(self._no_wheel_filter)
+        for cb in self.findChildren(QComboBox):
+            cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            cb.setMinimumContentsLength(10)
         self._load_values()
 
         # Connect log stream
@@ -374,11 +396,18 @@ class SettingsWindow(QMainWindow):
         self.btn_test_key.clicked.connect(self._test_api_connection)
         box_api_l.addWidget(self.btn_test_key, 5, 3)
 
-        # Model Selector (Editable)
+        # Model Selector (Editable) + Live Refresh
         box_api_l.addWidget(QLabel("视觉推理模型 (Model):"), 6, 0)
         self.combo_model = QComboBox()
         self.combo_model.setEditable(True)
-        box_api_l.addWidget(self.combo_model, 6, 1, 1, 3)
+        box_api_l.addWidget(self.combo_model, 6, 1, 1, 2)
+
+        self.btn_refresh_models = QPushButton("刷新模型")
+        self.btn_refresh_models.setObjectName("SecondaryBtn")
+        self.btn_refresh_models.setFixedWidth(90)
+        self.btn_refresh_models.setToolTip("从官方 API 实时拉取当前可用的最新模型列表")
+        self.btn_refresh_models.clicked.connect(lambda: self._refresh_models_async(silent=False))
+        box_api_l.addWidget(self.btn_refresh_models, 6, 3)
 
         # API Timeout Setting
         box_api_l.addWidget(QLabel("请求超时时间 (Timeout):"), 7, 0)
@@ -389,23 +418,25 @@ class SettingsWindow(QMainWindow):
         self.spin_timeout.setRange(5, 600)
         self.spin_timeout.setValue(35)
         self.spin_timeout.setSuffix(" 秒")
-        self.spin_timeout.setFixedWidth(110)
+        self.spin_timeout.setFixedWidth(124)
         self.spin_timeout.setToolTip("输入 API 请求的最大等待时间（秒）。默认推荐 35 秒。")
         timeout_h.addWidget(self.spin_timeout)
 
-        self.btn_reset_timeout = QPushButton("恢复默认 (35秒)")
+        self.btn_reset_timeout = QPushButton("恢复默认")
         self.btn_reset_timeout.setObjectName("SecondaryBtn")
-        self.btn_reset_timeout.setFixedWidth(120)
+        self.btn_reset_timeout.setFixedWidth(96)
         self.btn_reset_timeout.setToolTip("将请求超时时间快速重置为官方推荐默认值 35 秒")
         self.btn_reset_timeout.clicked.connect(lambda: self.spin_timeout.setValue(35))
         timeout_h.addWidget(self.btn_reset_timeout)
 
         lbl_timeout_desc = QLabel("💡 默认参考值: 35秒；中转站/代理网络慢或使用思考大模型 (如 gemini-4-argon) 建议设为 60~120秒")
+        lbl_timeout_desc.setWordWrap(True)
+        lbl_timeout_desc.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         lbl_timeout_desc.setStyleSheet("color: #a49cb8; font-size: 11px;")
-        timeout_h.addWidget(lbl_timeout_desc)
-        timeout_h.addStretch()
+        timeout_h.addWidget(lbl_timeout_desc, 1)
 
         box_api_l.addLayout(timeout_h, 7, 1, 1, 3)
+        box_api_l.setColumnStretch(1, 1)
 
         # Vertex Tips Hint
         self.lbl_vertex_hint = QLabel("💡 提示：使用 Google Cloud Vertex AI 时，推荐模型填入 gemini-4-argon（前沿推理大模型）或 gemini-3.8-flash；区域推荐 global（全球调度，抗429更稳定）；服务账号需在 GCP 控制台赋予 Vertex AI User (roles/aiplatform.user) 权限。")
@@ -416,9 +447,10 @@ class SettingsWindow(QMainWindow):
         layout.addWidget(box_api)
 
         # Speech recognition credentials (3-way switcher)
-        box_asr = QGroupBox("语音输入 (Ctrl+F1 语音对话)")
+        box_asr = QGroupBox("语音输入 (自定义快捷键 / 右键长按立绘)")
         box_asr_l = QGridLayout(box_asr)
         box_asr_l.setSpacing(10)
+        box_asr_l.setColumnStretch(1, 1)
 
         box_asr_l.addWidget(QLabel("语音识别引擎:"), 0, 0)
         self.combo_asr_provider = QComboBox()
@@ -427,15 +459,31 @@ class SettingsWindow(QMainWindow):
         self.combo_asr_provider.addItem("本地离线 ASR (faster-whisper，参考 Coopanion)", "local_asr")
         box_asr_l.addWidget(self.combo_asr_provider, 0, 1, 1, 3)
 
-        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 1, 0)
+        box_asr_l.addWidget(QLabel("语音输入快捷键:"), 1, 0)
+        hk_h = QHBoxLayout()
+        hk_h.setSpacing(8)
+        self.key_voice_hotkey = QKeySequenceEdit()
+        self.key_voice_hotkey.setMaximumSequenceLength(1)
+        self.key_voice_hotkey.setStyleSheet("background-color: #161224; color: #f8f9fa; border: 1px solid #3d335c; border-radius: 6px; padding: 6px 10px;")
+        self.key_voice_hotkey.setToolTip("点击输入框后直接按下想要设置的快捷键组合（如 Ctrl+F1、Alt+V、F2）")
+        hk_h.addWidget(self.key_voice_hotkey, 1)
+
+        btn_reset_hk = QPushButton("恢复默认")
+        btn_reset_hk.setObjectName("SecondaryBtn")
+        btn_reset_hk.setFixedWidth(96)
+        btn_reset_hk.clicked.connect(lambda: self.key_voice_hotkey.setKeySequence(QKeySequence("Ctrl+F1")))
+        hk_h.addWidget(btn_reset_hk)
+        box_asr_l.addLayout(hk_h, 1, 1, 1, 3)
+
+        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 2, 0)
         self.input_tencent_secret_id = QLineEdit()
         self.input_tencent_secret_id.setPlaceholderText("腾讯云 API 密钥管理中的 SecretId")
-        box_asr_l.addWidget(self.input_tencent_secret_id, 1, 1, 1, 3)
-        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 2, 0)
+        box_asr_l.addWidget(self.input_tencent_secret_id, 2, 1, 1, 3)
+        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 3, 0)
         self.input_tencent_secret_key = QLineEdit()
         self.input_tencent_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_tencent_secret_key.setPlaceholderText("腾讯云 API 密钥管理中的 SecretKey")
-        box_asr_l.addWidget(self.input_tencent_secret_key, 2, 1, 1, 3)
+        box_asr_l.addWidget(self.input_tencent_secret_key, 3, 1, 1, 3)
 
         # Tencent Cloud console link and copy button
         tencent_link_h = QHBoxLayout()
@@ -452,12 +500,12 @@ class SettingsWindow(QMainWindow):
         tencent_link_h.addWidget(btn_copy_tencent)
         tencent_link_h.addStretch()
 
-        box_asr_l.addLayout(tencent_link_h, 3, 0, 1, 4)
+        box_asr_l.addLayout(tencent_link_h, 4, 0, 1, 4)
 
-        asr_hint = QLabel("按 Ctrl+F1 开始/结束录音；停止后自动识别并发送。录音最长 55 秒。")
+        asr_hint = QLabel("按下快捷键开关录音，或直接在桌宠立绘上「右键长按」说话、松开结束；识别后自动发送。")
         asr_hint.setWordWrap(True)
         asr_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
-        box_asr_l.addWidget(asr_hint, 4, 0, 1, 4)
+        box_asr_l.addWidget(asr_hint, 5, 0, 1, 4)
 
         layout.addWidget(box_asr)
 
@@ -465,6 +513,7 @@ class SettingsWindow(QMainWindow):
         box_dev = QGroupBox("隐私截屏范围与桌宠交互 (Dev 实验性功能)")
         box_dev_l = QGridLayout(box_dev)
         box_dev_l.setSpacing(10)
+        box_dev_l.setColumnStretch(1, 1)
 
         box_dev_l.addWidget(QLabel("截屏读取范围:"), 0, 0)
         self.combo_capture_mode = QComboBox()
@@ -484,10 +533,19 @@ class SettingsWindow(QMainWindow):
         self.lbl_custom_region.setStyleSheet("color: #a49cb8; font-size: 11px;")
         box_dev_l.addWidget(self.lbl_custom_region, 1, 0, 1, 4)
 
-        self.chk_eye_tracking = QCheckBox("开启视线/微视差跟随鼠标 (Eye Tracking)")
-        self.chk_wandering = QCheckBox("开启桌面边缘自动漫步 (Wandering Demo - 不抢焦点)")
-        box_dev_l.addWidget(self.chk_eye_tracking, 2, 0, 1, 2)
-        box_dev_l.addWidget(self.chk_wandering, 2, 2, 1, 2)
+        self.chk_walk_enabled = QCheckBox("开启桌面水平漫步 (慢走 / 快走)")
+        self.chk_jetpack_enabled = QCheckBox("开启喷气背包全屏飞行 (跨高度焦点巡逻)")
+        move_h = QHBoxLayout()
+        move_h.setSpacing(24)
+        move_h.addWidget(self.chk_walk_enabled)
+        move_h.addWidget(self.chk_jetpack_enabled)
+        move_h.addStretch()
+        box_dev_l.addLayout(move_h, 2, 0, 1, 4)
+
+        self.chk_eye_tracking = QCheckBox("开启视线/微视差跟随鼠标 (Eye Tracking · 暂未完善，敬请期待)")
+        self.chk_eye_tracking.setEnabled(False)
+        self.chk_eye_tracking.setStyleSheet("QCheckBox:disabled { color: #6e6782; } QCheckBox::indicator:disabled { background-color: #161224; border: 1px solid #2c2440; }")
+        box_dev_l.addWidget(self.chk_eye_tracking, 3, 0, 1, 4)
 
         layout.addWidget(box_dev)
         layout.addWidget(box_asr)
@@ -914,12 +972,15 @@ class SettingsWindow(QMainWindow):
 
             self.input_key.setText(cfg.get("api_key", ""))
             self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
+            if cfg.get("api_key", "").strip():
+                QTimer.singleShot(300, lambda: self._refresh_models_async(silent=True))
             self.spin_timeout.setValue(int(cfg.get("api_timeout", 35)))
             self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
             self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
             asr_idx = self.combo_asr_provider.findData(cfg.get("asr_provider", "tencent"))
             if asr_idx >= 0:
                 self.combo_asr_provider.setCurrentIndex(asr_idx)
+            self.key_voice_hotkey.setKeySequence(QKeySequence(cfg.get("voice_hotkey", "Ctrl+F1") or "Ctrl+F1"))
 
             cap_idx = self.combo_capture_mode.findData(cfg.get("capture_mode", "primary"))
             if cap_idx >= 0:
@@ -927,8 +988,10 @@ class SettingsWindow(QMainWindow):
             self._custom_capture_rect = cfg.get("custom_capture_rect", [])
             if isinstance(self._custom_capture_rect, list) and len(self._custom_capture_rect) == 4:
                 self.lbl_custom_region.setText(f"当前框选区域: X={self._custom_capture_rect[0]}, Y={self._custom_capture_rect[1]}, {self._custom_capture_rect[2]}x{self._custom_capture_rect[3]}")
-            self.chk_eye_tracking.setChecked(cfg.get("eye_tracking_enabled", False))
-            self.chk_wandering.setChecked(cfg.get("wandering_enabled", False))
+            self.chk_eye_tracking.setChecked(False)
+            legacy_wander = bool(cfg.get("wandering_enabled", False))
+            self.chk_walk_enabled.setChecked(bool(cfg.get("walk_enabled", legacy_wander)))
+            self.chk_jetpack_enabled.setChecked(bool(cfg.get("jetpack_fly_enabled", legacy_wander)))
             self.chk_auto.setChecked(cfg.get("auto_mode", True))
             self.slider_cooldown.setValue(int(cfg.get("cooldown_seconds", 45)))
             self.lbl_cooldown_val.setText(f"{self.slider_cooldown.value()} 秒")
@@ -1206,6 +1269,7 @@ class SettingsWindow(QMainWindow):
             self.input_key.setPlaceholderText("填入 Gemini 官方 API 密钥 (AQ. 或 AIzaSy 开头)")
             items = [
                 "gemini-3.8-flash",
+                "gemini-4-hydrogen",
                 "gemini-4-argon"
             ]
             self.combo_model.addItems(items)
@@ -1220,6 +1284,7 @@ class SettingsWindow(QMainWindow):
             self.lbl_key.setText("API Key / Token (可选):")
             self.input_key.setPlaceholderText("若使用服务账号 JSON 则此处留空；或填入 Vertex API Key / ya29 Access Token")
             items = [
+                "gemini-4-hydrogen",
                 "gemini-4-argon",
                 "gemini-3.8-flash",
                 "claude-3-5-sonnet-v2@20241022"
@@ -1252,6 +1317,7 @@ class SettingsWindow(QMainWindow):
                 "gemini-3.8-flash-medium",
                 "gemini-3.8-flash-low",
                 "gemini-3.8-flash",
+                "gemini-4-hydrogen",
                 "gemini-4-argon",
                 "claude-sonnet-4-6",
                 "claude-opus-4-6-thinking",
@@ -1295,6 +1361,96 @@ class SettingsWindow(QMainWindow):
         if text in PERSONA_PRESETS:
             p = PERSONA_PRESETS[text]
             self.lbl_persona_desc.setText(f"说明: {p['desc']}")
+
+    def _refresh_models_async(self, silent: bool = False):
+        prov = self.combo_provider.currentData()
+        key = self.input_key.text().strip()
+        if not key or key.startswith("✅") or key.startswith("⚠️"):
+            key = self.config_mgr.get("api_key", "").strip()
+        base_url = self.input_api_url.text().strip() or "https://openrouter.ai/api/v1"
+
+        if prov not in ("gemini", "openai_compatible"):
+            if not silent:
+                QMessageBox.information(self, "刷新模型", "当前接口类型使用内置最新模型列表，也可以直接在下拉框中手动输入任意模型名称。")
+            return
+        if not key:
+            if not silent:
+                QMessageBox.warning(self, "刷新模型", "请先填写 API Key 再刷新模型列表。")
+            return
+
+        if not silent:
+            self.btn_refresh_models.setEnabled(False)
+            self.btn_refresh_models.setText("拉取中...")
+
+        import threading
+        import requests
+
+        def worker():
+            try:
+                models = []
+                if prov == "gemini":
+                    r = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={key}", timeout=10)
+                    if r.status_code != 200:
+                        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:120]}")
+                    for m in r.json().get("models", []):
+                        name = m.get("name", "").replace("models/", "")
+                        methods = m.get("supportedGenerationMethods", [])
+                        low = name.lower()
+                        if "generateContent" in methods and low.startswith("gemini-") and not any(
+                            skip in low for skip in ("tts", "image", "robotics", "computer-use", "deep-research", "embedding")
+                        ):
+                            models.append(name)
+
+                    def sort_key(n: str):
+                        nl = n.lower()
+                        if "3.8-flash" in nl:
+                            return (0, nl)
+                        if "gemini-4-" in nl:
+                            return (1, nl)
+                        if "gemini-3" in nl:
+                            return (2, nl)
+                        if "flash-latest" in nl:
+                            return (3, nl)
+                        return (4, nl)
+
+                    models = sorted(set(models), key=sort_key)
+                elif prov == "openai_compatible":
+                    url = f"{base_url.rstrip('/')}/models"
+                    r = requests.get(url, headers={"Authorization": f"Bearer {key}"}, timeout=10)
+                    if r.status_code != 200:
+                        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:120]}")
+                    for item in r.json().get("data", []):
+                        mid = item.get("id", "")
+                        if mid:
+                            models.append(mid)
+                    models = sorted(set(models))
+
+                self._models_fetched.emit(models, "", silent)
+            except Exception as e:
+                self._models_fetched.emit([], str(e), silent)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_models_fetched(self, models: list, err: str, silent: bool):
+        self.btn_refresh_models.setEnabled(True)
+        self.btn_refresh_models.setText("刷新模型")
+        if err:
+            if not silent:
+                QMessageBox.warning(self, "刷新失败", f"拉取模型列表失败：{err}")
+            return
+        if not models:
+            if not silent:
+                QMessageBox.information(self, "刷新模型", "未拉取到可用模型。")
+            return
+        curr_text = self.combo_model.currentText().strip()
+        self.combo_model.blockSignals(True)
+        self.combo_model.clear()
+        self.combo_model.addItems(models)
+        if curr_text:
+            self.combo_model.setCurrentText(curr_text)
+        self.combo_model.blockSignals(False)
+        if not silent:
+            QMessageBox.information(self, "刷新成功", f"已同步 {len(models)} 个最新官方可用模型！")
 
     def _toggle_key_visibility(self):
         if self.input_key.echoMode() == QLineEdit.EchoMode.Password:
@@ -1567,10 +1723,13 @@ class SettingsWindow(QMainWindow):
             "tencent_secret_id": tencent_secret_id,
             "tencent_secret_key": tencent_secret_key,
             "asr_provider": self.combo_asr_provider.currentData() or "tencent",
+            "voice_hotkey": self.key_voice_hotkey.keySequence().toString(QKeySequence.SequenceFormat.PortableText) or "Ctrl+F1",
             "capture_mode": self.combo_capture_mode.currentData() or "primary",
             "custom_capture_rect": getattr(self, "_custom_capture_rect", []),
-            "eye_tracking_enabled": self.chk_eye_tracking.isChecked(),
-            "wandering_enabled": self.chk_wandering.isChecked(),
+            "eye_tracking_enabled": False,
+            "walk_enabled": self.chk_walk_enabled.isChecked(),
+            "jetpack_fly_enabled": self.chk_jetpack_enabled.isChecked(),
+            "wandering_enabled": self.chk_walk_enabled.isChecked() or self.chk_jetpack_enabled.isChecked(),
             "auto_mode": auto_mode,
             "cooldown_seconds": cooldown,
             "bubble_duration": bubble_duration,
