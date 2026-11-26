@@ -1,0 +1,11 @@
+{
+  "Source": "hagami_3q_master.png",
+  "FrameWidth": 512,
+  "FrameHeight": 512,
+  "Columns": 4,
+  "Rows": 3,
+  "FrameCount": 12,
+  "SampleFps": 12,
+  "Alpha": "RGBA",
+  "ImageFormat": "webp"
+}

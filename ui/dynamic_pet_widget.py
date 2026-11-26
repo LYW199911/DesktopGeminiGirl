@@ -24,7 +24,8 @@ ACTION_DEFS = {
     "happy": {"file": "点击回应-开心跃动", "loop": False, "title": "开心跃动"},
     "dangling": {"file": "被鼠标拖拽悬空反馈", "loop": True, "title": "悬空挣扎"},
     "coding": {"file": "写代码", "loop": True, "title": "写代码"},
-    "shocked": {"file": "被吓一跳", "loop": False, "title": "被吓一跳"}
+    "shocked": {"file": "被吓一跳", "loop": False, "title": "被吓一跳"},
+    "walk": {"file": "漫步走路", "loop": True, "title": "漫步走路"}
 }
 
 class FloatingParticle:
@@ -338,27 +339,25 @@ class DynamicDesktopPetWidget(QWidget):
         self.interaction_dialog.open_for_critique(last_text, self.pos())
 
     def _step_60fps(self):
-        # Eye / gaze micro-parallax tracking
-        if self.config_mgr.get("eye_tracking_enabled", False):
+        # Clean facing-direction tracking (no whole-sprite jelly wobble)
+        self._gaze_offset_x = 0.0
+        self._gaze_offset_y = 0.0
+        if self.config_mgr.get("eye_tracking_enabled", False) and not self.config_mgr.get("wandering_enabled", False):
             cursor_pos = QCursor.pos()
             center = self.mapToGlobal(QPoint(self.width() // 2, self.height() // 3))
             dx = cursor_pos.x() - center.x()
-            dy = cursor_pos.y() - center.y()
-            target_gx = max(-7.0, min(7.0, dx / 80.0))
-            target_gy = max(-4.0, min(4.0, dy / 80.0))
-            self._gaze_offset_x += (target_gx - self._gaze_offset_x) * 0.15
-            self._gaze_offset_y += (target_gy - self._gaze_offset_y) * 0.15
-            if not self.config_mgr.get("wandering_enabled", False) and abs(dx) > 120:
+            if abs(dx) > 100:
                 self._facing_left = dx < 0
-        else:
-            self._gaze_offset_x *= 0.85
-            self._gaze_offset_y *= 0.85
 
-        # Coopanion-style non-focus-stealing wandering
-        if self.config_mgr.get("wandering_enabled", False) and not self.is_dragging and self.current_action_key == "idle":
+        # Coopanion-style non-focus-stealing wandering with dedicated walk animation
+        if self.config_mgr.get("wandering_enabled", False) and not self.is_dragging and self.current_action_key in ("idle", "walk"):
             if self._wander_pause_ticks > 0:
                 self._wander_pause_ticks -= 1
+                if self.current_action_key == "walk":
+                    self.set_action("idle")
             else:
+                if self.current_action_key != "walk":
+                    self.set_action("walk")
                 screen_obj = self.screen() or QApplication.primaryScreen()
                 if screen_obj:
                     geom = screen_obj.availableGeometry()
@@ -373,6 +372,8 @@ class DynamicDesktopPetWidget(QWidget):
                         self._wander_pause_ticks = 120
                     self._facing_left = self._wander_dir < 0
                     self.move(next_x, self.y())
+        elif self.current_action_key == "walk":
+            self.set_action("idle")
 
         now = time.perf_counter()
         dt = min(0.05, now - self.last_update_time)
