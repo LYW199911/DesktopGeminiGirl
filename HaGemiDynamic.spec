@@ -12,9 +12,15 @@ except Exception:
     VERSION = "1.5.2"
 
 datas = [
-    (os.path.join(BASE_DIR, 'assets'), 'assets'),
     (os.path.join(BASE_DIR, 'config.example.json'), '.'),
 ]
+_assets_root = os.path.join(BASE_DIR, 'assets')
+for _root, _dirs, _files in os.walk(_assets_root):
+    _dirs[:] = [d for d in _dirs if d not in ('hagami_rig', 'whale_demo')]
+    for _fn in _files:
+        _src = os.path.join(_root, _fn)
+        _rel_dir = os.path.relpath(_root, BASE_DIR)
+        datas.append((_src, _rel_dir))
 sounddevice_datas, sounddevice_binaries, sounddevice_hiddenimports = collect_all('sounddevice')
 datas += sounddevice_datas
 
@@ -44,6 +50,11 @@ hiddenimports = [
     'perception.window_tracker',
     'perception.screen_capture',
     'perception.hotkey_listener',
+    'perception.focus_navigator',
+    'perception.voice_controller',
+    'perception.local_asr',
+    'perception.tencent_asr',
+    'numpy',
     'tts.edge_speaker',
     'ui.dynamic_pet_widget',
     'ui.dynamic_bubble_widget',
@@ -53,6 +64,8 @@ hiddenimports = [
     'ui.interaction_dialog',
     'ui.bubble_widget',
     'ui.update_dialog',
+    'ui.mic_overlay',
+    'ui.region_selector',
     'update_checker',
     'cryptography',
     'cryptography.hazmat.primitives',
