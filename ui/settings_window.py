@@ -540,7 +540,11 @@ class SettingsWindow(QMainWindow):
         move_h.addWidget(self.chk_walk_enabled)
         move_h.addWidget(self.chk_jetpack_enabled)
         move_h.addStretch()
-        box_dev_l.addLayout(move_h, 2, 0, 1, 4)
+        if self.is_dynamic:
+            box_dev_l.addLayout(move_h, 2, 0, 1, 4)
+        else:
+            self.chk_walk_enabled.hide()
+            self.chk_jetpack_enabled.hide()
 
         self.chk_eye_tracking = QCheckBox("开启视线/微视差跟随鼠标 (Eye Tracking · 暂未完善，敬请期待)")
         self.chk_eye_tracking.setEnabled(False)
@@ -1727,9 +1731,9 @@ class SettingsWindow(QMainWindow):
             "capture_mode": self.combo_capture_mode.currentData() or "primary",
             "custom_capture_rect": getattr(self, "_custom_capture_rect", []),
             "eye_tracking_enabled": False,
-            "walk_enabled": self.chk_walk_enabled.isChecked(),
-            "jetpack_fly_enabled": self.chk_jetpack_enabled.isChecked(),
-            "wandering_enabled": self.chk_walk_enabled.isChecked() or self.chk_jetpack_enabled.isChecked(),
+            "walk_enabled": self.chk_walk_enabled.isChecked() if self.is_dynamic else False,
+            "jetpack_fly_enabled": self.chk_jetpack_enabled.isChecked() if self.is_dynamic else False,
+            "wandering_enabled": (self.chk_walk_enabled.isChecked() or self.chk_jetpack_enabled.isChecked()) if self.is_dynamic else False,
             "auto_mode": auto_mode,
             "cooldown_seconds": cooldown,
             "bubble_duration": bubble_duration,
