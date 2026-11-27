@@ -100,6 +100,10 @@ class DynamicDesktopPetWidget(QWidget):
         self._right_press_timer = QTimer(self)
         self._right_press_timer.setSingleShot(True)
         self._right_press_timer.timeout.connect(self._on_right_long_press)
+        self._api_thinking = False
+        self._curious_reset_timer = QTimer(self)
+        self._curious_reset_timer.setSingleShot(True)
+        self._curious_reset_timer.timeout.connect(self._reset_curious_thinking)
 
         target_h = int(self.config_mgr.get("target_height", 250))
         self.scale_factor = max(0.35, min(0.85, target_h / 380.0))
@@ -272,21 +276,31 @@ class DynamicDesktopPetWidget(QWidget):
                 self.eviction_timer.stop()
 
     def set_thinking(self, is_thinking: bool):
+        self._api_thinking = bool(is_thinking)
         if is_thinking:
+            self._curious_reset_timer.stop()
             self.set_action("thinking")
         else:
             if self.current_action_key == "thinking":
                 self.set_action("idle")
 
+    def _reset_curious_thinking(self):
+        if not self._api_thinking and self.current_action_key == "thinking":
+            self.set_action("idle")
+
     def set_emotion(self, emotion: str):
         em = emotion.lower()
         if em == "shocked":
+            self._curious_reset_timer.stop()
             self.set_action("shocked")
         elif em == "curious":
             self.set_action("thinking")
+            self._curious_reset_timer.start(4000)
         elif em in ["confident", "relieved"]:
+            self._curious_reset_timer.stop()
             self.trigger_happy_reaction()
         else:
+            self._curious_reset_timer.stop()
             self.set_action("idle")
 
     def cycle_next_outfit(self):
