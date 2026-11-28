@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QSlider, QSpinBox, QCheckBox, QComboBox,
     QTextEdit, QTextBrowser, QFileDialog, QMessageBox, QGroupBox, QScrollArea,
-    QFrame, QSizePolicy, QKeySequenceEdit
+    QFrame, QSizePolicy, QKeySequenceEdit, QProgressBar
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QObject, QEvent
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QTextCursor, QKeySequence
@@ -86,6 +86,7 @@ class SettingsWindow(QMainWindow):
     settings_applied = pyqtSignal()
     request_manual_critique = pyqtSignal()
     _models_fetched = pyqtSignal(list, str, bool)
+    _token_price_fetched = pyqtSignal(float, float, str, str, bool)
 
     def __init__(self, parent=None, is_dynamic: bool = False):
         super().__init__(parent)
@@ -107,6 +108,7 @@ class SettingsWindow(QMainWindow):
 
         self._init_ui()
         self._models_fetched.connect(self._on_models_fetched)
+        self._token_price_fetched.connect(self._on_token_price_fetched)
         self._no_wheel_filter = _NoWheelFilter(self)
         for w in self.findChildren((QSlider, QComboBox, QSpinBox)):
             w.installEventFilter(self._no_wheel_filter)
@@ -144,7 +146,7 @@ class SettingsWindow(QMainWindow):
                 color: #a49cb8;
                 border-top-left-radius: 8px;
                 border-top-right-radius: 8px;
-                padding: 8px 18px;
+                padding: 8px 14px;
                 margin-right: 4px;
                 font-weight: bold;
                 font-size: 13px;
@@ -239,19 +241,25 @@ class SettingsWindow(QMainWindow):
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
 
+        self.tab_model = QWidget()
         self.tab_general = QWidget()
+        self.tab_voice = QWidget()
         if not self.is_dynamic:
             self.tab_avatar = QWidget()
         self.tab_persona = QWidget()
         self.tab_logs = QWidget()
 
+        self.tabs.addTab(self.tab_model, "模型与 Token")
         self.tabs.addTab(self.tab_general, "核心与感知")
+        self.tabs.addTab(self.tab_voice, "语音与外观")
         if not self.is_dynamic:
             self.tabs.addTab(self.tab_avatar, "立绘与表情工坊")
         self.tabs.addTab(self.tab_persona, "人设与口癖调教")
         self.tabs.addTab(self.tab_logs, "实时日志与记录")
 
+        self._build_model_tab()
         self._build_general_tab()
+        self._build_voice_tab()
         if not self.is_dynamic:
             self._build_avatar_tab()
         self._build_persona_tab()
@@ -276,6 +284,12 @@ class SettingsWindow(QMainWindow):
         self.btn_check_update.clicked.connect(self.open_update_dialog)
         bottom_bar.addWidget(self.btn_check_update)
 
+        self.btn_feedback = QPushButton("💬 意见反馈", self)
+        self.btn_feedback.setObjectName("SecondaryBtn")
+        self.btn_feedback.setToolTip("打开意见反馈与交流中心（QQ群 1135775083 / 邮箱 / GitHub Issue）")
+        self.btn_feedback.clicked.connect(self.open_feedback_dialog)
+        bottom_bar.addWidget(self.btn_feedback)
+
         bottom_bar.addStretch()
 
         self.btn_save = QPushButton("保存并立即生效", self)
@@ -294,17 +308,29 @@ class SettingsWindow(QMainWindow):
         dlg = UpdateDialog(is_dynamic=self.is_dynamic, parent=self)
         dlg.exec()
 
-    # ==========================
-    # Tab 1: General & Senses
-    # ==========================
-    def _build_general_tab(self):
+    def open_feedback_dialog(self):
+        from .feedback_dialog import FeedbackDialog
+        dlg = FeedbackDialog(parent=self, is_dynamic=self.is_dynamic)
+        dlg.exec()
+
+    def _create_scroll_tab(self, tab_widget: QWidget, spacing: int = 14) -> QVBoxLayout:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setSpacing(14)
+        layout.setSpacing(spacing)
+        scroll.setWidget(content)
+        outer = QVBoxLayout(tab_widget)
+        outer.addWidget(scroll)
+        return layout
+
+    # ==========================
+    # Tab 1: Model & Token Usage
+    # ==========================
+    def _build_model_tab(self):
+        layout = self._create_scroll_tab(self.tab_model)
 
         # 1. API Box
         box_api = QGroupBox("AI 算力与大模型接口设置")
@@ -400,6 +426,11 @@ class SettingsWindow(QMainWindow):
         box_api_l.addWidget(QLabel("视觉推理模型 (Model):"), 6, 0)
         self.combo_model = QComboBox()
         self.combo_model.setEditable(True)
+        self._price_fetch_timer = QTimer(self)
+        self._price_fetch_timer.setSingleShot(True)
+        self._price_fetch_timer.setInterval(450)
+        self._price_fetch_timer.timeout.connect(self._auto_fetch_price_for_current_model)
+        self.combo_model.currentTextChanged.connect(self._on_model_changed_for_price)
         box_api_l.addWidget(self.combo_model, 6, 1, 1, 2)
 
         self.btn_refresh_models = QPushButton("刷新模型")
@@ -446,68 +477,121 @@ class SettingsWindow(QMainWindow):
 
         layout.addWidget(box_api)
 
-        # Speech recognition credentials (3-way switcher)
-        box_asr = QGroupBox("语音输入 (自定义快捷键 / 右键长按立绘)")
-        box_asr_l = QGridLayout(box_asr)
-        box_asr_l.setSpacing(10)
-        box_asr_l.setColumnStretch(1, 1)
+        # 1b. Token & Cost Estimation Box
+        box_tok = QGroupBox("Token 消耗统计与费用预计")
+        box_tok_l = QGridLayout(box_tok)
+        box_tok_l.setSpacing(10)
+        box_tok_l.setColumnStretch(1, 1)
 
-        box_asr_l.addWidget(QLabel("语音识别引擎:"), 0, 0)
-        self.combo_asr_provider = QComboBox()
-        self.combo_asr_provider.addItem("腾讯云一句话识别 (需填下方密钥)", "tencent")
-        self.combo_asr_provider.addItem("Gemini 原生听写 (直接传音频给 Gemini，免配 ASR 密钥)", "gemini_audio")
-        self.combo_asr_provider.addItem("本地离线 ASR (faster-whisper，参考 Coopanion)", "local_asr")
-        box_asr_l.addWidget(self.combo_asr_provider, 0, 1, 1, 3)
+        stats_h = QHBoxLayout()
+        stats_h.setSpacing(8)
+        self.combo_token_scope = QComboBox()
+        self.combo_token_scope.addItem("按天 (今日)", "day")
+        self.combo_token_scope.addItem("按月 (本月)", "month")
+        self.combo_token_scope.addItem("累计 (全部)", "total")
+        self.combo_token_scope.setFixedWidth(118)
+        self.combo_token_scope.currentIndexChanged.connect(lambda _: self._refresh_token_stats_label())
+        stats_h.addWidget(self.combo_token_scope)
 
-        box_asr_l.addWidget(QLabel("语音输入快捷键:"), 1, 0)
-        hk_h = QHBoxLayout()
-        hk_h.setSpacing(8)
-        self.key_voice_hotkey = QKeySequenceEdit()
-        self.key_voice_hotkey.setMaximumSequenceLength(1)
-        self.key_voice_hotkey.setStyleSheet("background-color: #161224; color: #f8f9fa; border: 1px solid #3d335c; border-radius: 6px; padding: 6px 10px;")
-        self.key_voice_hotkey.setToolTip("点击输入框后直接按下想要设置的快捷键组合（如 Ctrl+F1、Alt+V、F2）")
-        hk_h.addWidget(self.key_voice_hotkey, 1)
+        self.lbl_token_stats = QLabel("请求: 0 次 | 输入: 0 | 输出: 0 | 预估: ¥0.00 ($0.0000)")
+        self.lbl_token_stats.setStyleSheet("color: #8be9fd; font-weight: bold;")
+        stats_h.addWidget(self.lbl_token_stats, 1)
+        box_tok_l.addLayout(stats_h, 0, 0, 1, 3)
 
-        btn_reset_hk = QPushButton("恢复默认")
-        btn_reset_hk.setObjectName("SecondaryBtn")
-        btn_reset_hk.setFixedWidth(96)
-        btn_reset_hk.clicked.connect(lambda: self.key_voice_hotkey.setKeySequence(QKeySequence("Ctrl+F1")))
-        hk_h.addWidget(btn_reset_hk)
-        box_asr_l.addLayout(hk_h, 1, 1, 1, 3)
+        tok_btn_h = QHBoxLayout()
+        tok_btn_h.setSpacing(6)
+        btn_refresh_tok = QPushButton("刷新")
+        btn_refresh_tok.setObjectName("SecondaryBtn")
+        btn_refresh_tok.setMinimumWidth(64)
+        btn_refresh_tok.setToolTip("手动重新读取最新 Token 统计与本月预算进度")
+        btn_refresh_tok.clicked.connect(self._refresh_token_stats_label)
+        tok_btn_h.addWidget(btn_refresh_tok)
 
-        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 2, 0)
-        self.input_tencent_secret_id = QLineEdit()
-        self.input_tencent_secret_id.setPlaceholderText("腾讯云 API 密钥管理中的 SecretId")
-        box_asr_l.addWidget(self.input_tencent_secret_id, 2, 1, 1, 3)
-        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 3, 0)
-        self.input_tencent_secret_key = QLineEdit()
-        self.input_tencent_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.input_tencent_secret_key.setPlaceholderText("腾讯云 API 密钥管理中的 SecretKey")
-        box_asr_l.addWidget(self.input_tencent_secret_key, 3, 1, 1, 3)
+        btn_open_tok_dir = QPushButton("打开统计目录")
+        btn_open_tok_dir.setObjectName("SecondaryBtn")
+        btn_open_tok_dir.setMinimumWidth(116)
+        btn_open_tok_dir.setToolTip("按 年/月/日.json 保存记录；如需重置请删除对应文件")
+        btn_open_tok_dir.clicked.connect(self._open_token_usage_dir)
+        tok_btn_h.addWidget(btn_open_tok_dir)
+        box_tok_l.addLayout(tok_btn_h, 0, 3)
 
-        # Tencent Cloud console link and copy button
-        tencent_link_h = QHBoxLayout()
-        lbl_tencent_url = QLabel("🔗 腾讯云密钥控制台: <a href='https://console.cloud.tencent.com/cam/capi' style='color:#ff7aa6;'>https://console.cloud.tencent.com/cam/capi</a>")
-        lbl_tencent_url.setOpenExternalLinks(True)
-        lbl_tencent_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        tencent_link_h.addWidget(lbl_tencent_url)
+        box_tok_l.addWidget(QLabel("本月预算进度:"), 1, 0)
+        budget_h = QHBoxLayout()
+        budget_h.setSpacing(10)
+        self.progress_budget = QProgressBar()
+        self.progress_budget.setRange(0, 1000)
+        self.progress_budget.setValue(0)
+        self.progress_budget.setTextVisible(True)
+        self.progress_budget.setFormat("本月已用 ¥0.00 / ¥50.00 (0.0%)")
+        self.progress_budget.setFixedHeight(22)
+        self.progress_budget.setStyleSheet("""
+            QProgressBar {
+                background-color: #161224;
+                border: 1px solid #3d335c;
+                border-radius: 6px;
+                text-align: center;
+                color: #f8f9fa;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #ff4e88;
+                border-radius: 5px;
+            }
+        """)
+        budget_h.addWidget(self.progress_budget, 1)
+        budget_h.addWidget(QLabel("月预算(元):"))
+        self.input_budget_rmb = QLineEdit("50")
+        self.input_budget_rmb.setPlaceholderText("默认 50")
+        self.input_budget_rmb.setFixedWidth(82)
+        self.input_budget_rmb.textChanged.connect(lambda _: self._refresh_token_stats_label())
+        budget_h.addWidget(self.input_budget_rmb)
+        box_tok_l.addLayout(budget_h, 1, 1, 1, 3)
 
-        btn_copy_tencent = QPushButton("复制网址")
-        btn_copy_tencent.setObjectName("SecondaryBtn")
-        btn_copy_tencent.setFixedWidth(85)
-        btn_copy_tencent.setToolTip("点击一键复制腾讯云 API 密钥控制台链接")
-        btn_copy_tencent.clicked.connect(lambda: QApplication.clipboard().setText("https://console.cloud.tencent.com/cam/capi"))
-        tencent_link_h.addWidget(btn_copy_tencent)
-        tencent_link_h.addStretch()
+        box_tok_l.addWidget(QLabel("计费方式:"), 2, 0)
+        self.combo_price_mode = QComboBox()
+        self.combo_price_mode.addItem("联网自动查价 (切换模型时自动搜索参考单价)", "auto")
+        self.combo_price_mode.addItem("手动自定义单价 ($ / 1M tokens)", "custom")
+        self.combo_price_mode.currentIndexChanged.connect(self._on_price_mode_changed)
+        box_tok_l.addWidget(self.combo_price_mode, 2, 1, 1, 2)
 
-        box_asr_l.addLayout(tencent_link_h, 4, 0, 1, 4)
+        self.btn_fetch_price = QPushButton("联网查价")
+        self.btn_fetch_price.setObjectName("SecondaryBtn")
+        self.btn_fetch_price.setFixedWidth(96)
+        self.btn_fetch_price.setToolTip("立即联网搜索当前模型公开价格并更新参考单价")
+        self.btn_fetch_price.clicked.connect(lambda: self._fetch_online_price_async(silent=False))
+        box_tok_l.addWidget(self.btn_fetch_price, 2, 3)
 
-        asr_hint = QLabel("按下快捷键开关录音，或直接在桌宠立绘上「右键长按」说话、松开结束；识别后自动发送。")
-        asr_hint.setWordWrap(True)
-        asr_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
-        box_asr_l.addWidget(asr_hint, 5, 0, 1, 4)
+        box_tok_l.addWidget(QLabel("输入/输出单价 ($/1M):"), 3, 0)
+        price_h = QHBoxLayout()
+        price_h.setSpacing(8)
+        self.input_price_in = QLineEdit("0.15")
+        self.input_price_in.setFixedWidth(90)
+        self.input_price_out = QLineEdit("0.60")
+        self.input_price_out.setFixedWidth(90)
+        self.lbl_price_hint = QLabel("当前参考: 输入 $0.15 / 输出 $0.60 (每百万 tokens)")
+        self.lbl_price_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
+        price_h.addWidget(QLabel("输入:"))
+        price_h.addWidget(self.input_price_in)
+        price_h.addWidget(QLabel("输出:"))
+        price_h.addWidget(self.input_price_out)
+        price_h.addWidget(self.lbl_price_hint, 1)
+        box_tok_l.addLayout(price_h, 3, 1, 1, 3)
 
-        layout.addWidget(box_asr)
+        lbl_tok_disclaimer = QLabel("⚠️ 注：以上 Token 统计与费用预估仅作大致参考，不作为官方实际账单依据（实际扣费请以各 API 平台账单为准）。")
+        lbl_tok_disclaimer.setWordWrap(True)
+        lbl_tok_disclaimer.setStyleSheet("color: #f1fa8c; font-size: 11px;")
+        box_tok_l.addWidget(lbl_tok_disclaimer, 4, 0, 1, 4)
+
+        layout.addWidget(box_tok)
+        layout.addStretch()
+
+    # ==========================
+    # Tab 2: Core & Perception
+    # ==========================
+    def _build_general_tab(self):
+        layout = self._create_scroll_tab(self.tab_general)
+        layout.addWidget(self._create_sense_box())
 
         # Screen capture scope & Dev Demo features
         box_dev = QGroupBox("隐私截屏范围与桌宠交互 (Dev 实验性功能)")
@@ -552,65 +636,32 @@ class SettingsWindow(QMainWindow):
         box_dev_l.addWidget(self.chk_eye_tracking, 3, 0, 1, 4)
 
         layout.addWidget(box_dev)
-        layout.addWidget(box_asr)
+        layout.addStretch()
 
-        # 2. Perception & Autostart Box
-        box_sense = QGroupBox("自动感知与场景设置")
-        box_sense_l = QGridLayout(box_sense)
-
-        self.chk_auto = QCheckBox("启用全自动感知模式（定时巡逻屏幕与活跃窗口）")
-        box_sense_l.addWidget(self.chk_auto, 0, 0, 1, 2)
-
-        box_sense_l.addWidget(QLabel("自动锐评冷却时间:"), 1, 0)
-        cooldown_box = QHBoxLayout()
-        self.slider_cooldown = QSlider(Qt.Orientation.Horizontal)
-        self.slider_cooldown.setRange(15, 120)
-        self.lbl_cooldown_val = QLabel("45 秒")
-        self.slider_cooldown.valueChanged.connect(lambda v: self.lbl_cooldown_val.setText(f"{v} 秒"))
-        cooldown_box.addWidget(self.slider_cooldown)
-        cooldown_box.addWidget(self.lbl_cooldown_val)
-        box_sense_l.addLayout(cooldown_box, 1, 1)
-
-        box_sense_l.addWidget(QLabel("气泡停留基础时长:"), 2, 0)
-        bubble_box = QHBoxLayout()
-        self.slider_bubble = QSlider(Qt.Orientation.Horizontal)
-        self.slider_bubble.setRange(4, 30)
-        self.lbl_bubble_val = QLabel("8 秒 (开启语音时自动同步延展)")
-        self.slider_bubble.valueChanged.connect(lambda v: self.lbl_bubble_val.setText(f"{v} 秒 (开启语音时自动同步延展)"))
-        bubble_box.addWidget(self.slider_bubble)
-        bubble_box.addWidget(self.lbl_bubble_val)
-        box_sense_l.addLayout(bubble_box, 2, 1)
-
-        # Scene preference checkboxes
-        scene_h = QHBoxLayout()
-        self.chk_game = QCheckBox("打游戏战况锐评")
-        self.chk_video = QCheckBox("看视频/直播弹幕互动")
-        self.chk_work = QCheckBox("码字/写代码摸鱼抓包")
-        scene_h.addWidget(self.chk_game)
-        scene_h.addWidget(self.chk_video)
-        scene_h.addWidget(self.chk_work)
-        box_sense_l.addLayout(scene_h, 3, 0, 1, 2)
-
-        # Autostart checkbox
-        self.chk_autostart = QCheckBox("开机自动在后台启动哈Gemi (Windows 自启动)")
-        box_sense_l.addWidget(self.chk_autostart, 4, 0, 1, 2)
-
-        # Persistent Memory checkbox
-        self.chk_memory = QCheckBox("开启长期记忆 (跨会话/开机后依然记住前情，保存在本地 memory.json)")
-        box_sense_l.addWidget(self.chk_memory, 5, 0, 1, 2)
-
-        # Auto check update checkbox
-        self.chk_auto_update = QCheckBox("启动时自动检查新版本与最新公告 (GitHub Releases)")
-        box_sense_l.addWidget(self.chk_auto_update, 6, 0, 1, 2)
-
-        layout.addWidget(box_sense)
+    # ==========================
+    # Tab 3: Voice & Appearance
+    # ==========================
+    def _build_voice_tab(self):
+        layout = self._create_scroll_tab(self.tab_voice)
 
         # 3. Voice & Appearance Box
         box_voice = QGroupBox("语音播报 (TTS) 与动态立绘设置" if self.is_dynamic else "语音播报 (TTS) 与桌宠外观")
         box_voice_l = QGridLayout(box_voice)
 
-        self.chk_tts = QCheckBox("启用少女音语音吐槽播报")
-        box_voice_l.addWidget(self.chk_tts, 0, 0, 1, 2)
+        voice_toggle_row = QVBoxLayout()
+        voice_toggle_row.setSpacing(6)
+        self.chk_tts = QCheckBox("开启语音")
+        sprite_bubble_row = QHBoxLayout()
+        sprite_bubble_row.setSpacing(20)
+        self.chk_enable_sprite = QCheckBox("显示桌宠立绘 (关闭可省电省内存，仅保留托盘与语音)")
+        self.chk_enable_sprite.toggled.connect(self._on_sprite_toggle_changed)
+        self.chk_enable_bubble = QCheckBox("显示桌面吐槽气泡框")
+        sprite_bubble_row.addWidget(self.chk_enable_sprite)
+        sprite_bubble_row.addWidget(self.chk_enable_bubble)
+        sprite_bubble_row.addStretch()
+        voice_toggle_row.addWidget(self.chk_tts)
+        voice_toggle_row.addLayout(sprite_bubble_row)
+        box_voice_l.addLayout(voice_toggle_row, 0, 0, 1, 3)
 
         # TTS Engine selector
         box_voice_l.addWidget(QLabel("语音引擎类型:"), 1, 0)
@@ -676,31 +727,44 @@ class SettingsWindow(QMainWindow):
         pitch_box.addWidget(self.lbl_pitch_val)
         box_voice_l.addLayout(pitch_box, 6, 1, 1, 2)
 
+        # Volume slider (applies to all TTS engines)
+        self.lbl_volume = QLabel("语音播报音量:")
+        box_voice_l.addWidget(self.lbl_volume, 7, 0)
+        vol_box = QHBoxLayout()
+        self.slider_volume = QSlider(Qt.Orientation.Horizontal)
+        self.slider_volume.setRange(0, 100)
+        self.slider_volume.setValue(100)
+        self.lbl_volume_val = QLabel("100%")
+        self.slider_volume.valueChanged.connect(lambda v: self.lbl_volume_val.setText(f"{v}%"))
+        vol_box.addWidget(self.slider_volume)
+        vol_box.addWidget(self.lbl_volume_val)
+        box_voice_l.addLayout(vol_box, 7, 1, 1, 2)
+
         # Custom TTS API fields (OpenAI / GPT-SoVITS)
         self.lbl_tts_url = QLabel("TTS API 接口地址:")
         self.input_tts_url = QLineEdit()
         self.input_tts_url.setPlaceholderText("例如: http://127.0.0.1:9880/v1/audio/speech 或 http://localhost:5000/tts")
-        box_voice_l.addWidget(self.lbl_tts_url, 7, 0)
-        box_voice_l.addWidget(self.input_tts_url, 7, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_tts_url, 8, 0)
+        box_voice_l.addWidget(self.input_tts_url, 8, 1, 1, 2)
 
         self.lbl_tts_key = QLabel("TTS API Key (可选):")
         self.input_tts_key = QLineEdit()
         self.input_tts_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_tts_key.setPlaceholderText("本地服务通常留空；第三方服务填入 Key")
-        box_voice_l.addWidget(self.lbl_tts_key, 8, 0)
-        box_voice_l.addWidget(self.input_tts_key, 8, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_tts_key, 9, 0)
+        box_voice_l.addWidget(self.input_tts_key, 9, 1, 1, 2)
 
         self.lbl_tts_model = QLabel("TTS 模型/音色 (可选):")
         self.input_tts_model = QLineEdit()
         self.input_tts_model.setPlaceholderText("例如: default / tts-1 / cosyvoice")
-        box_voice_l.addWidget(self.lbl_tts_model, 9, 0)
-        box_voice_l.addWidget(self.input_tts_model, 9, 1, 1, 2)
+        box_voice_l.addWidget(self.lbl_tts_model, 10, 0)
+        box_voice_l.addWidget(self.input_tts_model, 10, 1, 1, 2)
 
         self.lbl_gemini_hint = QLabel("💡 提示: 自动复用上方配置的 Gemini API Key，采用 Google 最新端到端原生拟真音色！")
         self.lbl_gemini_hint.setStyleSheet("color: #ff94ba; font-size: 11px;")
-        box_voice_l.addWidget(self.lbl_gemini_hint, 10, 0, 1, 3)
+        box_voice_l.addWidget(self.lbl_gemini_hint, 11, 0, 1, 3)
 
-        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 11, 0)
+        box_voice_l.addWidget(QLabel("桌宠立绘高度:"), 12, 0)
         size_box = QHBoxLayout()
         self.slider_height = QSlider(Qt.Orientation.Horizontal)
         self.slider_height.setRange(160, 380)
@@ -708,10 +772,10 @@ class SettingsWindow(QMainWindow):
         self.slider_height.valueChanged.connect(lambda v: self.lbl_height_val.setText(f"{v} px"))
         size_box.addWidget(self.slider_height)
         size_box.addWidget(self.lbl_height_val)
-        box_voice_l.addLayout(size_box, 11, 1, 1, 2)
+        box_voice_l.addLayout(size_box, 12, 1, 1, 2)
 
         if self.is_dynamic:
-            box_voice_l.addWidget(QLabel("动态立绘帧率调整:"), 12, 0)
+            box_voice_l.addWidget(QLabel("动态立绘帧率调整:"), 13, 0)
             fps_box = QHBoxLayout()
             self.slider_fps = QSlider(Qt.Orientation.Horizontal)
             self.slider_fps.setRange(8, 24)
@@ -723,18 +787,124 @@ class SettingsWindow(QMainWindow):
             )
             fps_box.addWidget(self.slider_fps)
             fps_box.addWidget(self.lbl_fps_val)
-            box_voice_l.addLayout(fps_box, 12, 1, 1, 2)
+            box_voice_l.addLayout(fps_box, 13, 1, 1, 2)
 
-            box_voice_l.addWidget(QLabel("动态内存优化模式:"), 13, 0)
+            box_voice_l.addWidget(QLabel("动态内存优化模式:"), 14, 0)
             self.chk_low_mem = QCheckBox("启用智能降载 (推荐: 内存仅 ~90MB，按需采样杜绝臃肿)")
             self.chk_low_mem.setChecked(bool(self.config_mgr.get("dynamic_low_memory_mode", True)))
-            box_voice_l.addWidget(self.chk_low_mem, 13, 1, 1, 2)
+            box_voice_l.addWidget(self.chk_low_mem, 14, 1, 1, 2)
 
         layout.addWidget(box_voice)
+        layout.addWidget(self._create_asr_box())
+        layout.addStretch()
 
-        scroll.setWidget(content)
-        v = QVBoxLayout(self.tab_general)
-        v.addWidget(scroll)
+    def _create_sense_box(self) -> QGroupBox:
+        box_sense = QGroupBox("自动感知与场景设置")
+        box_sense_l = QGridLayout(box_sense)
+
+        self.chk_auto = QCheckBox("启用全自动感知模式（定时巡逻屏幕与活跃窗口）")
+        box_sense_l.addWidget(self.chk_auto, 0, 0, 1, 2)
+
+        box_sense_l.addWidget(QLabel("自动锐评冷却时间:"), 1, 0)
+        cooldown_box = QHBoxLayout()
+        self.slider_cooldown = QSlider(Qt.Orientation.Horizontal)
+        self.slider_cooldown.setRange(15, 120)
+        self.lbl_cooldown_val = QLabel("45 秒")
+        self.slider_cooldown.valueChanged.connect(lambda v: self.lbl_cooldown_val.setText(f"{v} 秒"))
+        cooldown_box.addWidget(self.slider_cooldown)
+        cooldown_box.addWidget(self.lbl_cooldown_val)
+        box_sense_l.addLayout(cooldown_box, 1, 1)
+
+        box_sense_l.addWidget(QLabel("气泡停留基础时长:"), 2, 0)
+        bubble_box = QHBoxLayout()
+        self.slider_bubble = QSlider(Qt.Orientation.Horizontal)
+        self.slider_bubble.setRange(4, 30)
+        self.lbl_bubble_val = QLabel("8 秒 (开启语音时自动同步延展)")
+        self.slider_bubble.valueChanged.connect(lambda v: self.lbl_bubble_val.setText(f"{v} 秒 (开启语音时自动同步延展)"))
+        bubble_box.addWidget(self.slider_bubble)
+        bubble_box.addWidget(self.lbl_bubble_val)
+        box_sense_l.addLayout(bubble_box, 2, 1)
+
+        scene_h = QHBoxLayout()
+        self.chk_game = QCheckBox("打游戏战况锐评")
+        self.chk_video = QCheckBox("看视频/直播弹幕互动")
+        self.chk_work = QCheckBox("码字/写代码摸鱼抓包")
+        scene_h.addWidget(self.chk_game)
+        scene_h.addWidget(self.chk_video)
+        scene_h.addWidget(self.chk_work)
+        box_sense_l.addLayout(scene_h, 3, 0, 1, 2)
+
+        self.chk_autostart = QCheckBox("开机自动在后台启动哈Gemi (Windows 自启动)")
+        box_sense_l.addWidget(self.chk_autostart, 4, 0, 1, 2)
+
+        self.chk_memory = QCheckBox("开启长期记忆 (跨会话/开机后依然记住前情，保存在本地 memory.json)")
+        box_sense_l.addWidget(self.chk_memory, 5, 0, 1, 2)
+
+        self.chk_auto_update = QCheckBox("启动时自动检查新版本与最新公告 (GitHub Releases)")
+        box_sense_l.addWidget(self.chk_auto_update, 6, 0, 1, 2)
+        return box_sense
+
+    def _create_asr_box(self) -> QGroupBox:
+        box_asr = QGroupBox("语音输入 (自定义快捷键 / 右键长按立绘)")
+        box_asr_l = QGridLayout(box_asr)
+        box_asr_l.setSpacing(10)
+        box_asr_l.setColumnStretch(1, 1)
+
+        box_asr_l.addWidget(QLabel("语音识别引擎:"), 0, 0)
+        self.combo_asr_provider = QComboBox()
+        self.combo_asr_provider.addItem("腾讯云一句话识别 (需填下方密钥)", "tencent")
+        self.combo_asr_provider.addItem("Gemini 原生听写 (直接传音频给 Gemini，免配 ASR 密钥)", "gemini_audio")
+        self.combo_asr_provider.addItem("本地离线 ASR (faster-whisper，参考 Coopanion)", "local_asr")
+        box_asr_l.addWidget(self.combo_asr_provider, 0, 1, 1, 3)
+
+        box_asr_l.addWidget(QLabel("语音输入快捷键:"), 1, 0)
+        hk_h = QHBoxLayout()
+        hk_h.setSpacing(8)
+        self.key_voice_hotkey = QKeySequenceEdit()
+        self.key_voice_hotkey.setMaximumSequenceLength(1)
+        self.key_voice_hotkey.setStyleSheet("background-color: #161224; color: #f8f9fa; border: 1px solid #3d335c; border-radius: 6px; padding: 6px 10px;")
+        self.key_voice_hotkey.setToolTip("点击输入框后直接按下想要设置的快捷键组合（如 Ctrl+F1、Alt+V、F2）")
+        hk_h.addWidget(self.key_voice_hotkey, 1)
+
+        btn_reset_hk = QPushButton("恢复默认")
+        btn_reset_hk.setObjectName("SecondaryBtn")
+        btn_reset_hk.setFixedWidth(96)
+        btn_reset_hk.clicked.connect(lambda: self.key_voice_hotkey.setKeySequence(QKeySequence("Ctrl+F1")))
+        hk_h.addWidget(btn_reset_hk)
+        box_asr_l.addLayout(hk_h, 1, 1, 1, 3)
+
+        box_asr_l.addWidget(QLabel("腾讯云 SecretId:"), 2, 0)
+        self.input_tencent_secret_id = QLineEdit()
+        self.input_tencent_secret_id.setPlaceholderText("腾讯云 API 密钥管理中的 SecretId")
+        box_asr_l.addWidget(self.input_tencent_secret_id, 2, 1, 1, 3)
+        box_asr_l.addWidget(QLabel("腾讯云 SecretKey:"), 3, 0)
+        self.input_tencent_secret_key = QLineEdit()
+        self.input_tencent_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_tencent_secret_key.setPlaceholderText("腾讯云 API 密钥管理中的 SecretKey")
+        box_asr_l.addWidget(self.input_tencent_secret_key, 3, 1, 1, 3)
+
+        # Tencent Cloud console link and copy button
+        tencent_link_h = QHBoxLayout()
+        lbl_tencent_url = QLabel("🔗 腾讯云密钥控制台: <a href='https://console.cloud.tencent.com/cam/capi' style='color:#ff7aa6;'>https://console.cloud.tencent.com/cam/capi</a>")
+        lbl_tencent_url.setOpenExternalLinks(True)
+        lbl_tencent_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        tencent_link_h.addWidget(lbl_tencent_url)
+
+        btn_copy_tencent = QPushButton("复制网址")
+        btn_copy_tencent.setObjectName("SecondaryBtn")
+        btn_copy_tencent.setFixedWidth(85)
+        btn_copy_tencent.setToolTip("点击一键复制腾讯云 API 密钥控制台链接")
+        btn_copy_tencent.clicked.connect(lambda: QApplication.clipboard().setText("https://console.cloud.tencent.com/cam/capi"))
+        tencent_link_h.addWidget(btn_copy_tencent)
+        tencent_link_h.addStretch()
+
+        box_asr_l.addLayout(tencent_link_h, 4, 0, 1, 4)
+
+        asr_hint = QLabel("按下快捷键开关录音，或直接在桌宠立绘上「右键长按」说话、松开结束；识别后自动发送。")
+        asr_hint.setWordWrap(True)
+        asr_hint.setStyleSheet("color: #a49cb8; font-size: 11px;")
+        box_asr_l.addWidget(asr_hint, 5, 0, 1, 4)
+        return box_asr
 
     # ==========================
     # Tab 2: Avatar & Outfits
@@ -978,6 +1148,18 @@ class SettingsWindow(QMainWindow):
             self.combo_model.setCurrentText(cfg.get("model", "gemini-3.8-flash"))
             if cfg.get("api_key", "").strip():
                 QTimer.singleShot(300, lambda: self._refresh_models_async(silent=True))
+
+            pm_idx = self.combo_price_mode.findData(cfg.get("token_price_mode", "auto"))
+            if pm_idx >= 0:
+                self.combo_price_mode.setCurrentIndex(pm_idx)
+            self.input_price_in.setText(str(cfg.get("token_custom_input_price", 0.15)))
+            self.input_price_out.setText(str(cfg.get("token_custom_output_price", 0.60)))
+            budget_val = float(cfg.get("token_budget_rmb", 50.0) or 50.0)
+            self.input_budget_rmb.setText(f"{budget_val:g}")
+            self._on_price_mode_changed()
+            if (self.combo_price_mode.currentData() or "auto") == "auto":
+                QTimer.singleShot(500, lambda: self._fetch_online_price_async(silent=True))
+            self._refresh_token_stats_label()
             self.spin_timeout.setValue(int(cfg.get("api_timeout", 35)))
             self.input_tencent_secret_id.setText(cfg.get("tencent_secret_id", ""))
             self.input_tencent_secret_key.setText(cfg.get("tencent_secret_key", ""))
@@ -1015,6 +1197,13 @@ class SettingsWindow(QMainWindow):
             self.input_agy_path.setText(cfg.get("antigravity_cli_path", ""))
 
             self.chk_tts.setChecked(cfg.get("enable_tts", True))
+            sprite_on = bool(cfg.get("enable_pet_sprite", True))
+            self.chk_enable_sprite.blockSignals(True)
+            self.chk_enable_sprite.setChecked(sprite_on)
+            self.chk_enable_sprite.blockSignals(False)
+            self.chk_enable_bubble.setChecked(bool(cfg.get("enable_bubble", True)) if sprite_on else False)
+            self.chk_enable_bubble.setEnabled(sprite_on)
+            self.chk_enable_bubble.setVisible(sprite_on)
             tts_engine = cfg.get("tts_engine", "edge_tts")
             self._saved_edge_voice = cfg.get("tts_voice", "zh-CN-XiaoyiNeural")
             self._saved_gemini_voice = cfg.get("gemini_tts_voice", "Aoede")
@@ -1060,6 +1249,10 @@ class SettingsWindow(QMainWindow):
                 pitch_val = 10
             self.slider_pitch.setValue(pitch_val)
             self.lbl_pitch_val.setText(f"{pitch_val:+d}Hz")
+
+            vol_val = max(0, min(100, int(cfg.get("tts_volume", 100))))
+            self.slider_volume.setValue(vol_val)
+            self.lbl_volume_val.setText(f"{vol_val}%")
 
             self.input_tts_url.setText(cfg.get("tts_api_url", ""))
             self.input_tts_key.setText(cfg.get("tts_api_key", ""))
@@ -1152,6 +1345,16 @@ class SettingsWindow(QMainWindow):
         )
         if file_path:
             self.input_agy_path.setText(file_path)
+
+    def _on_sprite_toggle_changed(self, checked: bool):
+        if not checked:
+            self.chk_enable_bubble.setChecked(False)
+            self.chk_enable_bubble.setEnabled(False)
+            self.chk_enable_bubble.setVisible(False)
+            self.chk_tts.setChecked(True)
+        else:
+            self.chk_enable_bubble.setEnabled(True)
+            self.chk_enable_bubble.setVisible(True)
 
     def _on_tts_engine_changed(self):
         engine = self.combo_tts_engine.currentData() or "edge_tts"
@@ -1456,6 +1659,115 @@ class SettingsWindow(QMainWindow):
         if not silent:
             QMessageBox.information(self, "刷新成功", f"已同步 {len(models)} 个最新官方可用模型！")
 
+    def _on_price_mode_changed(self):
+        is_custom = (self.combo_price_mode.currentData() == "custom")
+        self.input_price_in.setEnabled(is_custom)
+        self.input_price_out.setEnabled(is_custom)
+        if not is_custom:
+            try:
+                from brain.token_tracker import get_reference_unit_price
+                pin, pout = get_reference_unit_price(
+                    self.combo_model.currentText().strip(),
+                    self.combo_provider.currentData() or "gemini",
+                )
+                self.input_price_in.setText(str(pin))
+                self.input_price_out.setText(str(pout))
+                self.lbl_price_hint.setText(f"自动参考价: 输入 ${pin} / 输出 ${pout} (每百万 tokens)")
+            except Exception:
+                pass
+        else:
+            self.lbl_price_hint.setText("已启用自定义单价 ($/1M tokens)")
+
+    def _get_budget_rmb(self) -> float:
+        raw = self.input_budget_rmb.text().strip()
+        if not raw:
+            return 50.0
+        try:
+            val = float(raw)
+            return val if val > 0 else 50.0
+        except Exception:
+            return 50.0
+
+    def _refresh_token_stats_label(self):
+        try:
+            from brain.token_tracker import TokenTracker
+            tracker = TokenTracker()
+            scope = self.combo_token_scope.currentData() or "day"
+            s = tracker.get_summary(scope)
+            usd_cost = float(s.get("estimated_cost_usd", 0.0))
+            rmb_cost = usd_cost * 7.25
+            self.lbl_token_stats.setText(
+                f"请求: {s['requests']} 次 | 输入: {s['prompt_tokens']:,} | 输出: {s['completion_tokens']:,} | 预估: ¥{rmb_cost:.3f} (${usd_cost:.4f})"
+            )
+
+            month_s = s if scope == "month" else tracker.get_summary("month")
+            month_rmb = float(month_s.get("estimated_cost_usd", 0.0)) * 7.25
+            budget_rmb = self._get_budget_rmb()
+            pct = (month_rmb / budget_rmb) * 100.0 if budget_rmb > 0 else 0.0
+            self.progress_budget.setValue(min(1000, int(round(pct * 10))))
+            self.progress_budget.setFormat(f"本月已用 ¥{month_rmb:.2f} / ¥{budget_rmb:.2f} ({pct:.1f}%)")
+        except Exception:
+            pass
+
+    def _open_token_usage_dir(self):
+        try:
+            from brain.token_tracker import TokenTracker
+            from PyQt6.QtGui import QDesktopServices
+            from PyQt6.QtCore import QUrl
+            usage_dir = TokenTracker().get_usage_dir()
+            QDesktopServices.openUrl(QUrl.fromLocalFile(usage_dir))
+        except Exception as e:
+            QMessageBox.warning(self, "打开失败", f"无法打开统计目录：{e}")
+
+    def _on_model_changed_for_price(self, _text: str = ""):
+        if (self.combo_price_mode.currentData() or "auto") == "auto":
+            self._price_fetch_timer.start()
+
+    def _auto_fetch_price_for_current_model(self):
+        if (self.combo_price_mode.currentData() or "auto") != "auto":
+            return
+        self._on_price_mode_changed()
+        self._fetch_online_price_async(silent=True)
+
+    def _fetch_online_price_async(self, silent: bool = False):
+        model_name = self.combo_model.currentText().strip()
+        if not model_name:
+            return
+        provider = self.combo_provider.currentData() or "gemini"
+        if provider == "antigravity":
+            self.input_price_in.setText("0.0")
+            self.input_price_out.setText("0.0")
+            self.lbl_price_hint.setText("Antigravity 订阅通道免额外 Token 计费 ($0 / $0)")
+            return
+        self.btn_fetch_price.setEnabled(False)
+        self.btn_fetch_price.setText("查价中...")
+        if silent:
+            self.lbl_price_hint.setText(f"正在联网搜索 {model_name} 参考单价...")
+        import threading
+
+        def worker():
+            try:
+                from brain.token_tracker import fetch_online_unit_price
+                pin, pout, matched = fetch_online_unit_price(model_name)
+                self._token_price_fetched.emit(pin, pout, matched, "", silent)
+            except Exception as e:
+                self._token_price_fetched.emit(0.0, 0.0, "", str(e), silent)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_token_price_fetched(self, pin: float, pout: float, matched: str, err: str, silent: bool):
+        self.btn_fetch_price.setEnabled(True)
+        self.btn_fetch_price.setText("联网查价")
+        if err:
+            if not silent:
+                QMessageBox.warning(self, "联网查价失败", f"未能获取在线价格：{err}")
+            else:
+                self._on_price_mode_changed()
+            return
+        self.input_price_in.setText(str(pin))
+        self.input_price_out.setText(str(pout))
+        self.lbl_price_hint.setText(f"联网参考价 ({matched}): ${pin} / ${pout} (每百万 tokens)")
+
     def _toggle_key_visibility(self):
         if self.input_key.echoMode() == QLineEdit.EchoMode.Password:
             self.input_key.setEchoMode(QLineEdit.EchoMode.Normal)
@@ -1568,7 +1880,8 @@ class SettingsWindow(QMainWindow):
             model=model,
             gemini_api_key=gemini_key,
             gemini_voice=gemini_voice,
-            gemini_model=gemini_model
+            gemini_model=gemini_model,
+            volume=self.slider_volume.value()
         )
         name = self.input_name.text().strip() or "哈Gemi"
         if engine_type == "gemini_tts":
@@ -1676,6 +1989,8 @@ class SettingsWindow(QMainWindow):
         antigravity_cli_path = self.input_agy_path.text().strip()
 
         enable_tts = self.chk_tts.isChecked()
+        enable_bubble = self.chk_enable_bubble.isChecked()
+        enable_pet_sprite = self.chk_enable_sprite.isChecked()
         tts_engine = self.combo_tts_engine.currentData() or "edge_tts"
         if tts_engine == "gemini_tts":
             gemini_tts_voice = self.combo_voice.currentData() or "Aoede"
@@ -1694,6 +2009,7 @@ class SettingsWindow(QMainWindow):
 
         tts_rate = f"{self.slider_rate.value():+d}%"
         tts_pitch = f"{self.slider_pitch.value():+d}Hz"
+        tts_volume = self.slider_volume.value()
         tts_api_url = self.input_tts_url.text().strip()
         tts_api_key = self.input_tts_key.text().strip()
         tts_model = self.input_tts_model.text().strip()
@@ -1714,9 +2030,22 @@ class SettingsWindow(QMainWindow):
 
         outfits = {emo: card["filename"] for emo, card in self.outfit_cards.items()} if self.outfit_cards else self.config_mgr.get("outfits", {})
 
+        try:
+            in_p = max(0.0, float(self.input_price_in.text().strip() or 0.15))
+        except Exception:
+            in_p = 0.15
+        try:
+            out_p = max(0.0, float(self.input_price_out.text().strip() or 0.60))
+        except Exception:
+            out_p = 0.60
+
         # Save to config
         new_cfg = {
             "api_provider": api_provider,
+            "token_price_mode": self.combo_price_mode.currentData() or "auto",
+            "token_custom_input_price": in_p,
+            "token_custom_output_price": out_p,
+            "token_budget_rmb": self._get_budget_rmb(),
             "custom_api_url": custom_api_url,
             "api_key": key,
             "vertex_project_id": vertex_project_id,
@@ -1744,12 +2073,15 @@ class SettingsWindow(QMainWindow):
             "auto_check_update": auto_check_update,
             "antigravity_cli_path": antigravity_cli_path,
             "enable_tts": enable_tts,
+            "enable_bubble": enable_bubble,
+            "enable_pet_sprite": enable_pet_sprite,
             "tts_engine": tts_engine,
             "tts_voice": tts_voice,
             "gemini_tts_voice": gemini_tts_voice,
             "gemini_tts_model": gemini_tts_model,
             "tts_rate": tts_rate,
             "tts_pitch": tts_pitch,
+            "tts_volume": tts_volume,
             "tts_api_url": tts_api_url,
             "tts_api_key": tts_api_key,
             "tts_model": tts_model,
@@ -1768,7 +2100,12 @@ class SettingsWindow(QMainWindow):
         self.config_mgr.set_autostart(self.chk_autostart.isChecked())
 
         # Notify running app
+        self._refresh_token_stats_label()
         self.settings_applied.emit()
         self.logger.info("用户保存并应用了新的控制台设置！")
 
         QMessageBox.information(self, "已保存", "设置已成功保存并立即同步至桌面桌宠！")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh_token_stats_label()

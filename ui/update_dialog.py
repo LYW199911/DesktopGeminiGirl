@@ -140,7 +140,7 @@ class UpdateDialog(QDialog):
         self.text_browser.setOpenExternalLinks(True)
         self.text_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.text_browser.setLineWrapMode(QTextBrowser.LineWrapMode.WidgetWidth)
-        self.text_browser.setHtml("<p style='color:#a49cb8; text-align:center; padding-top:40px;'>正在连接 GitHub 探测最新版本发布日志，请稍候喵~ ✨</p>")
+        self.text_browser.setHtml("<p style='color:#a49cb8; text-align:center; padding-top:40px;'>正在连接 GitHub 探测最新版本发布日志，请稍候...</p>")
         layout.addWidget(self.text_browser)
 
         # 3. Download Progress Bar (Hidden initially)
@@ -154,19 +154,19 @@ class UpdateDialog(QDialog):
         # 4. Bottom Button Row
         btn_bar = QHBoxLayout()
 
-        self.btn_check_again = QPushButton("🔄 重新检查", self)
+        self.btn_check_again = QPushButton("重新检查", self)
         self.btn_check_again.setObjectName("SecondaryBtn")
         self.btn_check_again.clicked.connect(self.check_update)
         btn_bar.addWidget(self.btn_check_again)
 
         btn_bar.addStretch()
 
-        self.btn_open_web = QPushButton("🌐 GitHub 发布页", self)
+        self.btn_open_web = QPushButton("GitHub 发布页", self)
         self.btn_open_web.setObjectName("SecondaryBtn")
         self.btn_open_web.clicked.connect(self._open_github_release)
         btn_bar.addWidget(self.btn_open_web)
 
-        self.btn_download = QPushButton("💾 仅下载安装包", self)
+        self.btn_download = QPushButton("仅下载安装包", self)
         self.btn_download.setObjectName("SecondaryBtn")
         self.btn_download.clicked.connect(self._start_direct_download)
         self.btn_download.setEnabled(False)
@@ -421,7 +421,7 @@ class UpdateDialog(QDialog):
             title,
             f"安装包已成功下载并解压就绪！✨\n\n"
             f"点击【确定】后，哈Gemi 将自动退出并执行{action_text}，完成后会自动重新启动！\n"
-            "（您的个人配置 config.json 和记忆文件 memory.json 将被完好保留）\n\n"
+            "（您的个人配置 config.json、记忆文件 memory.json 与 Token 统计目录 token_usage 将被完好保留）\n\n"
             f"是否立即{action_text}并重启？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes

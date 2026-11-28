@@ -60,7 +60,8 @@ class DesktopPetController(QObject):
             model=self.config_mgr.get("tts_model", ""),
             gemini_api_key=self.config_mgr.get("api_key", ""),
             gemini_voice=self.config_mgr.get("gemini_tts_voice", "Aoede"),
-            gemini_model=self.config_mgr.get("gemini_tts_model", "gemini-3.8-flash-tts")
+            gemini_model=self.config_mgr.get("gemini_tts_model", "gemini-3.8-flash-tts"),
+            volume=self.config_mgr.get("tts_volume", 100)
         )
         self.speaker.on_start = lambda duration: self.speech_started.emit(duration)
 
@@ -142,9 +143,20 @@ class DesktopPetController(QObject):
             def on_finished(data, is_newer, err):
                 if is_newer and not err:
                     new_tag = data.get("tag_name", "")
-                    self.logger.info(f"✨ 发现新版本 {new_tag}！")
-                    msg = f"[HAPPY] 盯——主人！我发现 GitHub 上发布了新版本 {new_tag} 喵！快去托盘或设置中心看看更新公告吧~ ✨"
-                    self.critique_ready.emit(msg)
+                    body = data.get("body", "")
+                    self.logger.info(f"发现新版本 {new_tag}！")
+                    def summarize_and_notify():
+                        summary = ""
+                        try:
+                            summary = self.engine.summarize_release_notes(new_tag, body)
+                        except Exception:
+                            pass
+                        if summary:
+                            msg = f"[HAPPY] 发现新版本 {new_tag}！{summary} 有问题欢迎加 QQ 群 1135775083 反馈哦~"
+                        else:
+                            msg = f"[HAPPY] 发现新版本 {new_tag} 啦！快去托盘或设置中心更新吧，有问题欢迎加 QQ 群 1135775083 反馈~"
+                        self.critique_ready.emit(msg)
+                    threading.Thread(target=summarize_and_notify, daemon=True).start()
             self._startup_checker.check_finished.connect(on_finished)
             self._startup_checker.check_async()
         except Exception as e:
@@ -175,7 +187,8 @@ class DesktopPetController(QObject):
             model=cfg.get("tts_model", ""),
             gemini_api_key=cfg.get("api_key", ""),
             gemini_voice=cfg.get("gemini_tts_voice", "Aoede"),
-            gemini_model=cfg.get("gemini_tts_model", "gemini-3.8-flash-tts")
+            gemini_model=cfg.get("gemini_tts_model", "gemini-3.8-flash-tts"),
+            volume=cfg.get("tts_volume", 100)
         )
         if hasattr(self.engine, "antigravity_helper"):
             self.engine.antigravity_helper.reload()
@@ -185,6 +198,7 @@ class DesktopPetController(QObject):
         # Update Pet size & appearance
         new_height = int(cfg.get("target_height", 250))
         self.pet.update_size(new_height)
+        self.pet.set_sprite_enabled(bool(cfg.get("enable_pet_sprite", True)))
 
         pet_name = cfg.get("pet_name", "哈Gemi")
         self.pet.bubble.title_label.setText(pet_name)
@@ -232,7 +246,8 @@ class DesktopPetController(QObject):
         self._start_user_interaction_task(scene, title, proc, user_comment, rect=info.get("rect"))
 
     def _show_voice_status(self, message: str):
-        self.pet.show()
+        if self.config_mgr.get("enable_pet_sprite", True):
+            self.pet.show()
         self.pet.show_critique(message)
 
     def _toggle_voice_input(self):
@@ -433,8 +448,9 @@ class DesktopPetController(QObject):
         self.pet.set_emotion(emotion)
 
         # 2. Show bubble and speak
-        self.pet.show()
-        self.pet.raise_()
+        if self.config_mgr.get("enable_pet_sprite", True):
+            self.pet.show()
+            self.pet.raise_()
 
         base_sec = float(self.config_mgr.get("bubble_duration", 8))
         base_ms = max(4000, int(base_sec * 1000))
@@ -525,7 +541,10 @@ def main():
     tray = DesktopPetTray(icon_path=ICON_PATH)
     settings_win = SettingsWindow()
 
-    pet.show()
+    if cfg_mgr.get("enable_pet_sprite", True):
+        pet.show()
+    else:
+        pet.set_sprite_enabled(False)
 
     controller = DesktopPetController(pet, tray, settings_win)
 

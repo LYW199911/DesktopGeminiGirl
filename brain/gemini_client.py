@@ -705,6 +705,13 @@ class GeminiCritiqueEngine:
             )
             if text:
                 text = text.replace('"', '').replace('“', '').replace('”', '').strip()
+                try:
+                    from brain.token_tracker import TokenTracker
+                    est_in = int((len(sys_prompt) + len(user_prompt)) * 0.8) + (258 if image_b64 else 0)
+                    est_out = int(len(text) * 0.8)
+                    TokenTracker().record(est_in, est_out, self.model or "antigravity", "antigravity", self.config_mgr.config)
+                except Exception:
+                    pass
                 return text
             return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
         except Exception as e:
@@ -771,6 +778,14 @@ class GeminiCritiqueEngine:
                     if text_parts:
                         text = "".join(text_parts).strip()
                         text = text.replace('"', '').replace('“', '').replace('”', '').strip()
+                        try:
+                            from brain.token_tracker import TokenTracker
+                            um = result.get("usageMetadata", {})
+                            pin = um.get("promptTokenCount") or (int((len(sys_prompt) + len(user_prompt)) * 0.8) + (258 if image_b64 else 0))
+                            pout = um.get("candidatesTokenCount") or int(len(text) * 0.8)
+                            TokenTracker().record(pin, pout, model, "gemini", self.config_mgr.config)
+                        except Exception:
+                            pass
                         return text
                 return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
             else:
@@ -847,6 +862,14 @@ class GeminiCritiqueEngine:
                     if text_parts:
                         text = "".join(text_parts).strip()
                         text = text.replace('"', '').replace('“', '').replace('”', '').strip()
+                        try:
+                            from brain.token_tracker import TokenTracker
+                            um = result.get("usageMetadata", {})
+                            pin = um.get("promptTokenCount") or (int((len(sys_prompt) + len(user_prompt)) * 0.8) + (258 if image_b64 else 0))
+                            pout = um.get("candidatesTokenCount") or int(len(text) * 0.8)
+                            TokenTracker().record(pin, pout, model, "gemini", self.config_mgr.config)
+                        except Exception:
+                            pass
                         return text
                 return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
             else:
@@ -910,6 +933,14 @@ class GeminiCritiqueEngine:
                 if choices:
                     text = choices[0].get("message", {}).get("content", "").strip()
                     text = text.replace('"', '').replace('“', '').replace('”', '').strip()
+                    try:
+                        from brain.token_tracker import TokenTracker
+                        u = result.get("usage", {})
+                        pin = u.get("prompt_tokens") or (int((len(sys_prompt) + len(user_prompt)) * 0.8) + (258 if image_b64 else 0))
+                        pout = u.get("completion_tokens") or int(len(text) * 0.8)
+                        TokenTracker().record(pin, pout, self.model, "openai_compatible", self.config_mgr.config)
+                    except Exception:
+                        pass
                     return text
                 return f"[curious] 盯——主人当前的操作让本{pet_name}都陷入思考了喵..."
             else:
@@ -921,3 +952,28 @@ class GeminiCritiqueEngine:
         except Exception as e:
             print(f"[OpenAIEngine] Request failed: {e}", flush=True)
             return f"[relieved] 喵呜~网络连接异常，请检查 API 接口配置喵！"
+
+    def summarize_release_notes(self, tag: str, release_body: str) -> str:
+        """Summarizes GitHub release notes into 1-2 short, cute sentences using the configured AI."""
+        pet_name = self.config_mgr.get("pet_name", "哈Gemi")
+        clean_body = (release_body or "").strip()[:1500]
+        if not clean_body:
+            return ""
+        if self.provider not in ("vertex", "antigravity") and not self.api_key:
+            return ""
+        sys_p = f"你是桌面宠物{pet_name}，语气可爱简练。请把下面新版本更新日志总结成1到2句极简口语（总字数不超过50字，不要markdown符号和表情）。"
+        user_p = f"新版本 {tag} 更新内容：\n{clean_body}"
+        try:
+            if self.provider == "openai_compatible":
+                res = self._call_openai_compatible(sys_p, user_p, None, pet_name)
+            elif self.provider == "vertex":
+                res = self._call_vertex_ai(sys_p, user_p, None, pet_name)
+            elif self.provider == "antigravity":
+                res = self._call_antigravity(sys_p, user_p, None, pet_name)
+            else:
+                res = self._call_gemini_native(sys_p, user_p, None, pet_name)
+            if res and not res.startswith("[relieved]") and not res.startswith("[curious]"):
+                return res.strip()
+        except Exception:
+            pass
+        return ""

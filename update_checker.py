@@ -77,7 +77,7 @@ if %ERRORLEVEL%==0 (
 
 timeout /t 1 /nobreak >nul
 echo [HaGemi Updater] Updating files...
-robocopy "{src_dir}" "{dst_dir}" /E /IS /IT /XF config.json memory.json >nul 2>&1
+robocopy "{src_dir}" "{dst_dir}" /E /IS /IT /XF config.json memory.json token_usage.json /XD token_usage >nul 2>&1
 
 echo [HaGemi Updater] Restarting HaGemi...
 start "" /D "{dst_dir}" "{exe_name}"
@@ -108,7 +108,7 @@ while kill -0 "$PID" 2>/dev/null; do
 done
 sleep 1
 
-rsync -av --exclude="config.json" --exclude="memory.json" "$SRC/" "$DST/"
+rsync -av --exclude="config.json" --exclude="memory.json" --exclude="token_usage.json" --exclude="token_usage/" "$SRC/" "$DST/"
 open "$DST/$EXE" 2>/dev/null || "$DST/$EXE" &
 rm -rf "$SRC"
 rm -- "$0"

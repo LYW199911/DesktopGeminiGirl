@@ -32,14 +32,17 @@ if getattr(sys, 'frozen', False):
         os.makedirs(USER_DATA_DIR, exist_ok=True)
         CONFIG_FILE = os.path.join(USER_DATA_DIR, "config.json")
         MEMORY_FILE = os.path.join(USER_DATA_DIR, "memory.json")
+        TOKEN_USAGE_DIR = os.path.join(USER_DATA_DIR, "token_usage")
     else:
         CONFIG_FILE = os.path.join(APP_DIR, "config.json")
         MEMORY_FILE = os.path.join(APP_DIR, "memory.json")
+        TOKEN_USAGE_DIR = os.path.join(APP_DIR, "token_usage")
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     ASSETS_DIR = os.path.join(BASE_DIR, "assets")
     CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
     MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
+    TOKEN_USAGE_DIR = os.path.join(BASE_DIR, "token_usage")
 
 ICON_PATH = os.path.join(ASSETS_DIR, "app_icon.ico")
 if IS_MAC:

@@ -76,7 +76,8 @@ class DynamicPetController(QObject, VoiceInputMixin):
             model=self.config_mgr.get("tts_model", ""),
             gemini_api_key=self.config_mgr.get("api_key", ""),
             gemini_voice=self.config_mgr.get("gemini_tts_voice", "Aoede"),
-            gemini_model=self.config_mgr.get("gemini_tts_model", "gemini-3.8-flash-tts")
+            gemini_model=self.config_mgr.get("gemini_tts_model", "gemini-3.8-flash-tts"),
+            volume=self.config_mgr.get("tts_volume", 100)
         )
         self.speaker.on_start = lambda duration: self.speech_started.emit(duration)
 
@@ -141,9 +142,20 @@ class DynamicPetController(QObject, VoiceInputMixin):
             def on_finished(data, is_newer, err):
                 if is_newer and not err:
                     new_tag = data.get("tag_name", "")
-                    self.logger.info(f"✨ 发现新版本 {new_tag}！")
-                    msg = f"[HAPPY] 盯——主人！我发现 GitHub 上发布了新版本 {new_tag} 喵！快去托盘或设置中心看看更新公告吧~ ✨"
-                    self.critique_ready.emit(msg)
+                    body = data.get("body", "")
+                    self.logger.info(f"发现新版本 {new_tag}！")
+                    def summarize_and_notify():
+                        summary = ""
+                        try:
+                            summary = self.engine.summarize_release_notes(new_tag, body)
+                        except Exception:
+                            pass
+                        if summary:
+                            msg = f"[HAPPY] 发现新版本 {new_tag}！{summary} 有问题欢迎加 QQ 群 1135775083 反馈哦~"
+                        else:
+                            msg = f"[HAPPY] 发现新版本 {new_tag} 啦！快去托盘或设置中心更新吧，有问题欢迎加 QQ 群 1135775083 反馈~"
+                        self.critique_ready.emit(msg)
+                    threading.Thread(target=summarize_and_notify, daemon=True).start()
             self._startup_checker.check_finished.connect(on_finished)
             self._startup_checker.check_async()
         except Exception as e:
@@ -171,13 +183,17 @@ class DynamicPetController(QObject, VoiceInputMixin):
             model=cfg.get("tts_model", ""),
             gemini_api_key=cfg.get("api_key", ""),
             gemini_voice=cfg.get("gemini_tts_voice", "Aoede"),
-            gemini_model=cfg.get("gemini_tts_model", "gemini-3.8-flash-tts")
+            gemini_model=cfg.get("gemini_tts_model", "gemini-3.8-flash-tts"),
+            volume=cfg.get("tts_volume", 100)
         )
         new_height = int(cfg.get("target_height", 250))
         self.pet.update_size(new_height)
         new_fps = int(cfg.get("dynamic_fps", 15))
         self.pet.set_dynamic_fps(new_fps)
-        self.pet.reload_textures()
+        sprite_on = bool(cfg.get("enable_pet_sprite", True))
+        if sprite_on:
+            self.pet.reload_textures()
+        self.pet.set_sprite_enabled(sprite_on)
         if hasattr(self, "hotkeys"):
             self.hotkeys.update_voice_hotkey(cfg.get("voice_hotkey", "Ctrl+F1"))
 
@@ -310,8 +326,9 @@ class DynamicPetController(QObject, VoiceInputMixin):
 
         # Trigger reaction & sound
         self.pet.set_emotion(emotion)
-        self.pet.show()
-        self.pet.raise_()
+        if self.config_mgr.get("enable_pet_sprite", True):
+            self.pet.show()
+            self.pet.raise_()
 
         base_sec = float(self.config_mgr.get("bubble_duration", 8))
         base_ms = max(4000, int(base_sec * 1000))
@@ -374,8 +391,11 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
     pet = DynamicDesktopPetWidget()
-    pet.show()
-    pet.raise_()
+    if ConfigManager().get("enable_pet_sprite", True):
+        pet.show()
+        pet.raise_()
+    else:
+        pet.set_sprite_enabled(False)
 
     tray = DesktopPetTray(icon_path=ICON_PATH)
     tray.show()

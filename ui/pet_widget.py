@@ -94,6 +94,7 @@ class DesktopPetWidget(QWidget):
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._step_hover)
         self._anim_timer.start(80)
+        self._sprite_enabled = True
 
         self._is_voice_listening = False
         self._right_long_pressed = False
@@ -322,7 +323,22 @@ class DesktopPetWidget(QWidget):
         super().showEvent(event)
         self.raise_()
 
+    def set_sprite_enabled(self, enabled: bool):
+        """Enables or disables the pet sprite to save resources while keeping tray & TTS active."""
+        enabled = bool(enabled)
+        self._sprite_enabled = enabled
+        if not enabled:
+            self.bubble.hide()
+            self.interaction_dialog.hide()
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+
     def show_critique(self, text: str, duration_ms: Optional[int] = None):
+        self.bubble._full_text = text
+        if not getattr(self, "_sprite_enabled", True) or not self.config_mgr.get("enable_bubble", True):
+            return
         self.raise_()
         bw, bh = self.bubble.calculate_size(text)
 

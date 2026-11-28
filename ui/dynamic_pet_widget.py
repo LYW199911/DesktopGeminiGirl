@@ -147,6 +147,7 @@ class DynamicDesktopPetWidget(QWidget):
         self.physics_timer = QTimer(self)
         self.physics_timer.timeout.connect(self._step_60fps)
         self.physics_timer.start(16)
+        self._sprite_enabled = True
 
         # Idle memory eviction timer (unloads non-idle actions after 8s in idle)
         self.eviction_timer = QTimer(self)
@@ -366,8 +367,37 @@ class DynamicDesktopPetWidget(QWidget):
         self.bubble.set_tail_side("left" if self._bubble_mirrored_right else "right")
         return bx, by
 
+    def set_sprite_enabled(self, enabled: bool):
+        """Enables or disables the pet sprite to save CPU/GPU/RAM while keeping tray & TTS active."""
+        enabled = bool(enabled)
+        self._sprite_enabled = enabled
+        if not enabled:
+            self._nav_state = None
+            self._nav_target = None
+            self._nav_focus_rect = None
+            self.physics_timer.stop()
+            self.eviction_timer.stop()
+            self.bubble.hide()
+            self.hide()
+            for act in self.actions.values():
+                act["pixmap"] = None
+            import gc
+            gc.collect()
+        else:
+            self._ensure_action_loaded("idle")
+            self.current_action_key = "idle"
+            self.current_frame = 0
+            if not self.physics_timer.isActive():
+                self.physics_timer.start(16)
+            self.show()
+            self.raise_()
+
     def show_critique(self, text: str, duration_ms: Optional[int] = None):
         self.last_critique_text = text
+        if not self.config_mgr.get("enable_bubble", True):
+            return
+        if not self._sprite_enabled:
+            return
         self.raise_()
         bw, bh = self.bubble.calculate_size(text)
         bx, by = self._calc_bubble_pos(bw, bh)

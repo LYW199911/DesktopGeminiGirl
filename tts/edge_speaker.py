@@ -7,6 +7,7 @@ import base64
 import asyncio
 import tempfile
 import threading
+import queue
 import subprocess
 from typing import Optional
 import edge_tts
@@ -38,11 +39,13 @@ class EdgeSpeaker:
         model: str = "",
         gemini_api_key: str = "",
         gemini_voice: str = "Aoede",
-        gemini_model: str = "gemini-3.8-flash-tts"
+        gemini_model: str = "gemini-3.8-flash-tts",
+        volume: int = 100
     ):
         self.voice = voice or "zh-CN-XiaoyiNeural"
         self.rate = rate or "+10%"
         self.pitch = pitch or "+10Hz"
+        self.volume = max(0, min(100, int(volume)))
         self.enabled = enabled
         self.engine_type = engine_type or "edge_tts"
         self.api_url = (api_url or "").strip()
@@ -56,8 +59,12 @@ class EdgeSpeaker:
         os.makedirs(self._temp_dir, exist_ok=True)
         self._current_alias = "gemini_voice"
         self._lock = threading.Lock()
+        self._speech_queue: queue.Queue = queue.Queue()
+        self._stop_event = threading.Event()
         self._current_process: Optional[subprocess.Popen] = None
         self.on_start = None  # Callback signature: Callable[[int], None] -> duration_ms
+        self._worker_thread = threading.Thread(target=self._tts_worker_loop, daemon=True)
+        self._worker_thread.start()
 
     def update_config(
         self,
@@ -71,7 +78,8 @@ class EdgeSpeaker:
         model: Optional[str] = None,
         gemini_api_key: Optional[str] = None,
         gemini_voice: Optional[str] = None,
-        gemini_model: Optional[str] = None
+        gemini_model: Optional[str] = None,
+        volume: Optional[int] = None
     ):
         if voice is not None:
             self.voice = voice
@@ -95,15 +103,27 @@ class EdgeSpeaker:
             self.gemini_voice = gemini_voice.strip()
         if gemini_model is not None:
             self.gemini_model = gemini_model.strip()
+        if volume is not None:
+            self.volume = max(0, min(100, int(volume)))
 
     def toggle(self) -> bool:
         self.enabled = not self.enabled
         if not self.enabled:
+            self.clear_queue()
             self.stop()
         return self.enabled
 
+    def clear_queue(self):
+        while not self._speech_queue.empty():
+            try:
+                self._speech_queue.get_nowait()
+                self._speech_queue.task_done()
+            except queue.Empty:
+                break
+
     def stop(self):
         """Immediately stop any currently playing speech."""
+        self._stop_event.set()
         if IS_WIN and winmm:
             try:
                 winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
@@ -121,7 +141,54 @@ class EdgeSpeaker:
         if not self.enabled or not text:
             return
         clean_text = self._clean_text_for_speech(text)
-        threading.Thread(target=self._run_tts_and_play, args=(clean_text,), daemon=True).start()
+        if not clean_text:
+            return
+        # Cap backlog at 3 queued sentences so speech never falls far behind
+        while self._speech_queue.qsize() >= 3:
+            try:
+                self._speech_queue.get_nowait()
+                self._speech_queue.task_done()
+            except queue.Empty:
+                break
+        self._speech_queue.put(clean_text)
+
+    def _tts_worker_loop(self):
+        while True:
+            text = self._speech_queue.get()
+            try:
+                if self.enabled and text:
+                    self._stop_event.clear()
+                    duration_ms = self._run_tts_and_play(text)
+                    if duration_ms > 0:
+                        self._wait_playback_or_cutoff(duration_ms)
+            except Exception as e:
+                print(f"[TTS] Worker error: {e}", flush=True)
+            finally:
+                self._speech_queue.task_done()
+
+    def _wait_playback_or_cutoff(self, duration_ms: int):
+        """Waits for current speech to finish; cuts off overly long speech (>12s) if next item is queued."""
+        max_wait_s = min(max(duration_ms, 500) / 1000.0 + 0.2, 25.0)
+        t0 = time.monotonic()
+        while not self._stop_event.is_set() and self.enabled:
+            elapsed = time.monotonic() - t0
+            if elapsed >= max_wait_s:
+                break
+            # If next sentence is waiting and current sentence has played > 12s, cut it off cleanly
+            if not self._speech_queue.empty() and elapsed >= 12.0:
+                self.stop()
+                break
+            if IS_WIN and winmm and elapsed > 0.35:
+                try:
+                    buf = ctypes.create_unicode_buffer(64)
+                    if winmm.mciSendStringW(f"status {self._current_alias} mode", buf, 64, None) == 0:
+                        if buf.value.strip().lower() == "stopped":
+                            break
+                except Exception:
+                    pass
+            elif self._current_process is not None and self._current_process.poll() is not None:
+                break
+            time.sleep(0.08)
 
     def _clean_text_for_speech(self, text: str) -> str:
         # Filter markdown symbols and emotion tags like [confident], [shocked]
@@ -187,10 +254,12 @@ class EdgeSpeaker:
                     self._generate_edge_tts(text, audio_path)
 
                 if audio_path and os.path.exists(audio_path):
-                    self._play_audio(audio_path, text=text)
+                    dur = self._play_audio(audio_path, text=text)
                     self._cleanup_old_files()
+                    return dur
             except Exception as e:
                 print(f"[TTS] Error generating or playing speech: {e}", flush=True)
+            return 0
 
     def _generate_gemini_tts(self, text: str, unique_id: str) -> Optional[str]:
         if not requests:
@@ -295,22 +364,50 @@ class EdgeSpeaker:
         # 3. Fallback estimation based on text length (~3.5 Chinese characters per second)
         return max(3500, int(len(text) * 280))
 
+    def _scale_wav_volume(self, filepath: str):
+        """Scales 16-bit PCM WAV amplitude in-place when volume < 100 so all players honor volume."""
+        if self.volume >= 100:
+            return
+        try:
+            import wave
+            import numpy as np
+            with wave.open(filepath, "rb") as wf:
+                params = wf.getparams()
+                if wf.getsampwidth() != 2:
+                    return
+                raw = wf.readframes(wf.getnframes())
+            arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+            scaled = np.clip(arr * (self.volume / 100.0), -32768, 32767).astype(np.int16)
+            with wave.open(filepath, "wb") as wf:
+                wf.setparams(params)
+                wf.writeframes(scaled.tobytes())
+        except Exception:
+            pass
+
     def _play_audio(self, filepath: str, text: str = ""):
         duration_ms = 0
+        if self.volume <= 0:
+            duration_ms = self._get_audio_duration_ms(filepath, text=text)
+            if self.on_start:
+                self.on_start(duration_ms)
+            return
+
+        # Check magic bytes to detect true audio format
+        is_wav = False
+        try:
+            with open(filepath, "rb") as f:
+                if f.read(4) == b"RIFF":
+                    is_wav = True
+        except Exception:
+            pass
+        if is_wav and self.volume < 100:
+            self._scale_wav_volume(filepath)
+
         if IS_WIN and winmm:
             try:
                 # Safely close existing MCI alias
                 winmm.mciSendStringW(f"close {self._current_alias}", None, 0, None)
                 time.sleep(0.05)
-
-                # Check magic bytes to detect true audio format (handles wav content with any extension)
-                is_wav = False
-                try:
-                    with open(filepath, "rb") as f:
-                        if f.read(4) == b"RIFF":
-                            is_wav = True
-                except Exception:
-                    pass
 
                 file_ext = os.path.splitext(filepath)[1].lower()
                 if is_wav or file_ext == ".wav":
@@ -331,6 +428,8 @@ class EdgeSpeaker:
                 duration_ms = self._get_audio_duration_ms(filepath, text=text)
 
                 if res_open == 0:
+                    if not is_wav and self.volume < 100:
+                        winmm.mciSendStringW(f"setaudio {self._current_alias} volume to {self.volume * 10}", None, 0, None)
                     winmm.mciSendStringW(f"play {self._current_alias}", None, 0, None)
                 elif is_wav or file_ext == ".wav":
                     import winsound
@@ -342,9 +441,9 @@ class EdgeSpeaker:
         elif IS_MAC:
             try:
                 duration_ms = self._get_audio_duration_ms(filepath, text=text)
-                # macOS built-in native audio player supports both .wav and .mp3
+                # macOS built-in native audio player supports both .wav and .mp3 + -v volume
                 self._current_process = subprocess.Popen(
-                    ["afplay", filepath],
+                    ["afplay", "-v", f"{self.volume / 100.0:.2f}", filepath],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
@@ -356,8 +455,10 @@ class EdgeSpeaker:
             for player in ["mpv", "ffplay", "paplay", "aplay"]:
                 try:
                     args = [player, filepath]
-                    if player == "ffplay":
-                        args = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", filepath]
+                    if player == "mpv":
+                        args = [player, f"--volume={self.volume}", filepath]
+                    elif player == "ffplay":
+                        args = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", str(self.volume), filepath]
                     elif player == "mpv":
                         args = [player, "--no-video", filepath]
                     self._current_process = subprocess.Popen(
@@ -377,6 +478,7 @@ class EdgeSpeaker:
                 self.on_start(duration_ms)
             except Exception as e:
                 print(f"[TTS] on_start callback error: {e}", flush=True)
+        return duration_ms
 
     def _play_mp3(self, filepath: str):
         self._play_audio(filepath)
