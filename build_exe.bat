@@ -23,7 +23,7 @@ if errorlevel 1 (
 )
 
 xcopy /E /I /Y "assets" "dist\Ha-Gemi\assets" >nul
-copy /Y "config.json" "dist\Ha-Gemi\config.json" >nul
+copy /Y "config.example.json" "dist\Ha-Gemi\config.example.json" >nul
 echo.
 echo [SUCCESS] Build finished! Executable is at dist\Ha-Gemi\Ha-Gemi.exe
 pause

@@ -213,9 +213,9 @@ class UpdateDialog(QDialog):
             """)
             return
 
-        remote_tag = data.get("tag_name", "")
-        release_name = data.get("name", remote_tag)
-        body = data.get("body", "暂无详细说明。")
+        remote_tag = data.get("tag_name") or ""
+        release_name = data.get("name") or remote_tag
+        body = data.get("body") or "暂无详细说明。"
         self.release_url = data.get("html_url", f"https://github.com/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases")
 
         # Find matching asset for download based on platform and edition
@@ -275,7 +275,7 @@ class UpdateDialog(QDialog):
 
     def _markdown_to_html(self, text: str) -> str:
         """Converts basic markdown (headers, bullets, bold, links) into styled HTML."""
-        lines = text.splitlines()
+        lines = (text or "").splitlines()
         html_lines = []
         in_list = False
 
