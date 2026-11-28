@@ -218,29 +218,9 @@ class DesktopPetWidget(QWidget):
             self._pupil_dx *= 0.8
             self._pupil_dy *= 0.8
 
-        # Procedural walking gait + non-focus-stealing wandering
-        if self.config_mgr.get("wandering_enabled", False) and self._drag_pos.isNull():
-            if self._wander_pause_ticks > 0:
-                self._wander_pause_ticks -= 1
-                self._walk_phase *= 0.85
-            else:
-                self._walk_phase += 0.32
-                screen_obj = self.screen() or QApplication.primaryScreen()
-                if screen_obj:
-                    geom = screen_obj.availableGeometry()
-                    next_x = self.x() + self._wander_dir * 2
-                    if next_x <= geom.x() + 10:
-                        next_x = geom.x() + 10
-                        self._wander_dir = 1
-                        self._wander_pause_ticks = 25
-                    elif next_x + self.width() >= geom.x() + geom.width() - 10:
-                        next_x = geom.x() + geom.width() - self.width() - 10
-                        self._wander_dir = -1
-                        self._wander_pause_ticks = 25
-                    self._facing_left = self._wander_dir < 0
-                    self.move(next_x, self.y())
-        else:
-            self._walk_phase = 0.0
+        # Static edition stays stationary (gentle breathing hover only; wandering is exclusive to Dynamic Edition)
+        self._walk_phase = 0.0
+        self._facing_left = False
 
         self.update()
 
@@ -257,7 +237,7 @@ class DesktopPetWidget(QWidget):
         ox = 6.0
         oy = 7.0 + self._hover_offset
 
-        is_walking = self.config_mgr.get("wandering_enabled", False) and self._drag_pos.isNull() and self._wander_pause_ticks == 0
+        is_walking = False
         if is_walking:
             oy -= abs(math.sin(self._walk_phase)) * 3.0
 
